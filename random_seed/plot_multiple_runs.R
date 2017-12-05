@@ -11,15 +11,20 @@ library(data.table)
 rundir <- "/Users/hana/d$/opusgit/urbansim_data/data/psrc_parcel/runs"
 # which runs to include 
 # (grouped into groups that will be offset on the x-axis)
-runs <- list(c("run_8.run_2017_10_31_14_10", "run_11.run_2017_11_13_08_49"), # group I
+runs <- list(#c("run_8.run_2017_10_31_14_10", "run_11.run_2017_11_13_08_49"), # group I
              c("run_13.run_2017_11_16_15_38", "run_15.run_2017_11_20_15_09", 
-               "run_16.run_2017_11_25_15_27") # group II
+               "run_16.run_2017_11_25_15_27"), # group II
+              c("run_18.run_2017_11_28_11_27", "run_19.run_2017_11_29_22_07"),
+              c("run_21.run_2017_12_01_11_49")
           )
 # how many FAZes to plot
 nlargest <- 20
 
+# should differences between groups be considered
+dif.between.groups <- TRUE
+
 # output file name
-outfile <- 'multiple_runs_8_13.pdf'
+outfile <- 'multiple_runs_13_18_21t.pdf'
 
 # If indicators modified, edit the grid.arrange call
 # at the end of this script
@@ -44,11 +49,13 @@ for (ind in indicator.names) {
             ind.data.all <- if(is.null(ind.data.all)) ind.data else cbind(ind.data.all, ind.data[,indcolname, with=FALSE])
         }
         mrdata <- melt(ind.data.all, id.vars='faz_id')
-        # add difference between min and max by faz
-        mrdata[, dif := diff(range(value)), by=faz_id]
         mrdata[, group := igroup]
         all.data[[ind]] <- rbind(all.data[[ind]], mrdata)
     }
+    # add difference between min and max by faz
+    if(dif.between.groups) {
+        all.data[[ind]][ , dif := diff(range(value)), by=faz_id]
+    } else all.data[[ind]][ , dif := diff(range(value)), by= .(faz_id, group)]
     # obtain the nlargest fazes with max differences among all groups
     udif <- unique(all.data[[ind]][, .(faz_id, dif, group)])
     udif.max <- udif[, .(max.dif=max(dif)), by=faz_id]
@@ -57,14 +64,18 @@ for (ind in indicator.names) {
     all.data[[ind]] <- subset(all.data[[ind]], faz_id %in% selected.zones)
     # this sets the order of fazes on the x axis 
     all.data[[ind]][, faz_id := factor(faz_id, levels=selected.zones)]
+    # add lower and upper bound for drawing vertical lines
+    all.data[[ind]][, lower := min(value), by=.(faz_id, group)]
+    all.data[[ind]][,upper := max(value), by=.(faz_id, group)]
     i <- i+1
 }
 # generate plots
-pd <- position_dodge(.3) # how far apart are the groups
+pd <- position_dodge(.4) # how far apart are the groups
 g <- list()
 i <- 1
 for (ind in indicator.names) {
     g[[ind]] <- ggplot(all.data[[ind]], aes(x=faz_id, y=value, color=variable, group=group)) + 
+        geom_linerange(aes(ymax=upper, ymin=lower, group=group), position=pd, linetype=2, colour="grey") +
         geom_point(position=pd, shape=1) + xlab('') + ylab('') + 
         labs(title=indicator.names[i]) + 
         scale_colour_discrete(name = '') + 
