@@ -7,16 +7,22 @@ library(gridExtra)
 library(reshape2)
 library(data.table)
 
-# urbansim run directory
-rundir <- "/Users/hana/d$/opusgit/urbansim_data/data/psrc_parcel/runs"
 # which runs to include 
 # (grouped into groups that will be offset on the x-axis)
 runs <- list(#c("run_8.run_2017_10_31_14_10", "run_11.run_2017_11_13_08_49"), # group I
              c("run_13.run_2017_11_16_15_38", "run_15.run_2017_11_20_15_09", 
                "run_16.run_2017_11_25_15_27"), # group II
               c("run_18.run_2017_11_28_11_27", "run_19.run_2017_11_29_22_07"),
-              c("run_21.run_2017_12_01_11_49")
+              c("run_12.run_2017_12_04_15_08", "run_13.run_2017_12_05_11_35", "run_14.run_2017_12_05_11_35")
           )
+
+# urbansim run directories for each group
+dir.modelsrv8 <- "/Volumes/d$-1/opusgit/urbansim_data/data/psrc_parcel/runs"
+dir.modelsrv6 <- "/Volumes/d$/opusgit/urbansim_data/data/psrc_parcel/runs"
+#rundir <- "/Users/hana/d$/opusgit/urbansim_data/data/psrc_parcel/runs"
+# order of the directories should correspond to the order of groups in "runs"
+rundirs <- c(dir.modelsrv8, dir.modelsrv8, dir.modelsrv6)
+
 # how many FAZes to plot
 nlargest <- 20
 
@@ -24,13 +30,16 @@ nlargest <- 20
 dif.between.groups <- TRUE
 
 # output file name
-outfile <- 'multiple_runs_13_18_21t.pdf'
+outfile <- 'multiple_runs_13_18_12_13_14.pdf'
 
 # If indicators modified, edit the grid.arrange call
 # at the end of this script
 indicator.names <- c('Households', 'Employment'
                      #, 'Population'
                      )
+
+# add minutes to run names if there are multiple runs with the same number
+add.minutes <- any(duplicated(sapply(strsplit(unlist(runs), "[.]"), function(x) x[[1]])))
 
 all.data <- NULL
 i <- 1
@@ -42,9 +51,11 @@ for (ind in indicator.names) {
         ind.data.all <- NULL
         for (run.name in runs[[igroup]]) {
             # load data
-            rdir <- file.path(rundir, run.name, 'indicators')
+            rdir <- file.path(rundirs[igroup], run.name, 'indicators')
             ind.data <- fread(file.path(rdir, paste0('faz__table__', ind.name, '.csv')))[,c('faz_id', paste0(ind.name, '_2040')), with=FALSE]
             indcolname <- strsplit(run.name, "[.]")[[1]][1]
+            if(add.minutes)
+              indcolname <- paste(indcolname, strsplit(strsplit(run.name, "[.]")[[1]][2], "_")[[1]][6], sep="_")
             colnames(ind.data)[2] <- indcolname
             ind.data.all <- if(is.null(ind.data.all)) ind.data else cbind(ind.data.all, ind.data[,indcolname, with=FALSE])
         }
