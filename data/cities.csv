@@ -1,0 +1,141 @@
+city_id,city_name,county_id,fips_rgs_id,rgs_id
+49,Snohomish-Rural,61,6106,6
+94,Lynnwood,61,6102,2
+95,Everett,61,6101,1
+96,Brier,61,6104,4
+97,Brier MUGA,61,6105,5
+98,Edmonds,61,6103,3
+99,Meadowdale Gap MUGA,61,6105,5
+100,Mill Creek,61,6103,3
+101,Mountlake Terrace,61,6103,3
+102,Lynnwood MUGA,61,6105,5
+103,Mill Creek MUGA,61,6105,5
+104,Larch Way Overlap MUGA,61,6105,5
+105,Bothell MUGA,61,6105,5
+106,Marysville,61,6103,3
+107,Lake Stickney Gap,61,6105,5
+108,Mukilteo MUGA,61,6105,5
+109,Everett MUGA,61,6105,5
+110,Monroe,61,6103,3
+111,Arlington,61,6103,3
+112,Snohomish,61,6104,4
+113,Lake Stevens,61,6103,3
+114,Sultan,61,6104,4
+115,Woodway,61,6104,4
+116,Darrington,61,6104,4
+117,Gold Bar UGA,61,6105,5
+118,Edmonds MUGA,61,6105,5
+119,Mountlake Terrace MUGA,61,6105,5
+120,Mukilteo,61,6103,3
+121,Marysville UGA,61,6105,5
+122,Lake Stevens UGA,61,6105,5
+123,Stanwood,61,6104,4
+124,Arlington UGA,61,6105,5
+125,Monroe UGA,61,6105,5
+126,Snohomish UGA,61,6105,5
+127,Silver Firs Gap MUGA,61,6105,5
+128,Gold Bar,61,6104,4
+129,Granite Falls,61,6104,4
+130,Stanwood UGA,61,6105,5
+131,Index,61,6104,4
+132,Maltby UGA,61,6105,5
+133,Granite Falls UGA,61,6105,5
+134,PAINE FIELD AREA,61,6105,5
+135,Sultan UGA,61,6105,5
+136,Woodway MUGA,61,6105,5
+137,Darrington UGA,61,6105,5
+139,Bothell,61,6102,2
+1,Normandy Park,33,3304,4
+2,Auburn,33,3302,2
+3,King-Rural,33,3306,6
+4,Sea Tac,33,3302,2
+5,Shoreline,33,3303,3
+6,Renton PAA,33,3305,5
+7,Kent,33,3302,2
+8,Tukwila,33,3302,2
+9,Seattle,33,3301,1
+10,Kent PAA,33,3305,5
+11,North Highline,33,3305,5
+12,Renton,33,3302,2
+13,Bellevue,33,3301,1
+14,Kirkland,33,3302,2
+15,Redmond,33,3302,2
+16,Covington,33,3303,3
+17,Enumclaw,33,3304,4
+18,Des Moines,33,3303,3
+19,Mercer Island,33,3303,3
+20,Federal Way,33,3302,2
+21,Sammamish,33,3303,3
+22,Issaquah,33,3303,3
+23,Burien,33,3302,2
+24,Sammamish PAA,33,3305,5
+25,Federal Way PAA,33,3305,5
+26,Kenmore,33,3303,3
+27,Duvall,33,3304,4
+28,Bothell,33,3302,2
+30,Woodinville,33,3303,3
+31,Algona,33,3304,4
+32,North Bend,33,3304,4
+33,Lake Forest Park,33,3304,4
+34,Redmond PAA,33,3305,5
+35,Black Diamond,33,3304,4
+36,Newcastle PAA,33,3305,5
+37,Snoqualmie,33,3304,4
+38,Bear Creek UPD,33,3305,5
+39,Pacific,33,3304,4
+40,Tukwila PAA,33,3305,5
+41,Clyde Hill,33,3304,4
+42,Maple Valley,33,3303,3
+43,Newcastle,33,3304,4
+44,Issaquah PAA,33,3305,5
+45,Black Diamond PAA,33,3305,5
+47,Yarrow Point,33,3304,4
+48,Hunts Point,33,3304,4
+50,Medina,33,3304,4
+51,Beaux Arts,33,3304,4
+52,Skykomish,33,3304,4
+46,UUU,33,3305,5
+54,Milton,33,3304,4
+55,Carnation,33,3304,4
+57,Milton PAA,33,3305,5
+58,Bellevue PAA,33,3305,5
+60,Auburn PAA,33,3305,5
+61,Pacific PAA,33,3305,5
+62,Seattle PAA,33,3305,5
+63,Kitsap-Rural,35,3506,6
+64,Port Orchard,35,3504,4
+65,Bremerton,35,3501,1
+66,Bremerton UGA,35,3505,5
+67,Port Orchard UGA,35,3505,5
+68,Central Kitsap UGA,35,3505,5
+69,Bainbridge Island,35,3503,3
+70,Silverdale,35,3502,2
+71,Poulsbo,35,3504,4
+72,Poulsbo PUTA,35,3505,5
+73,Kingston UGA,35,3505,5
+29,Pierce-Rural,53,5306,6
+53,UU,53,5305,5
+59,Tacoma,53,5301,1
+74,Steilacoom,53,5304,4
+75,JBLM,53,5305,5
+76,DuPont,53,5304,4
+77,Gig Harbor,53,5304,4
+78,Roy,53,5304,4
+79,Lakewood,53,5302,2
+80,University Place,53,5303,3
+81,Fircrest,53,5304,4
+82,Ruston,53,5304,4
+83,Fife,53,5303,3
+84,Eatonville,53,5304,4
+85,Puyallup,53,5302,2
+86,Orting,53,5304,4
+87,Edgewood,53,5304,4
+88,Sumner,53,5304,4
+89,Bonney Lake,53,5303,3
+90,South Prairie,53,5304,4
+91,Carbonado,53,5304,4
+92,Buckley,53,5304,4
+93,Wilkeson,53,5304,4
+138,Auburn,53,5302,2
+141,Milton,53,5304,4
+142,Pacific,53,5304,4
