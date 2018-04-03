@@ -11,7 +11,6 @@ library(data.table)
 # The data directory requires the following csv files (exported from the base year):
 # buildings2014.csv, parcels2014.csv, cities.csv, building_sqft_per_job.csv
 data.dir <- "../data"
-data.dir <- "~/psrc/R/analysis/data"
 
 # Location of the new_buildings indicator
 indicator.dir <- "~/d6$/opusgit/urbansim_data/data/psrc_parcel/runs/run_100.run_2018_04_03_09_51/indicators"
