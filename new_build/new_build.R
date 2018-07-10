@@ -15,15 +15,15 @@ library(data.table)
 data.dir <- "../data"
 
 # Location of the new_buildings indicator
-indicator.dir <- "~/d6$/opusgit/urbansim_data/data/psrc_parcel/runs/run_101.run_2018_04_03_15_31/indicators"
+indicator.dir <- "~/d6$/opusgit/urbansim_data/data/psrc_parcel/runs/run_135.run_2018_05_15_10_59/indicators"
 
 # End year of the simulation
 year <- 2015
 
 # Write results into a file? If yes, into what file?
 write.file <- TRUE
-file.name.new <- "USadded_capacity_cities_run101.csv" # file name for new development
-file.name <- "UStotal_capacity_cities_run101.csv" # file name for total capacity
+file.name.new <- "USadded_capacity_cities_run135.csv" # file name for new development
+file.name <- "UStotal_capacity_cities_run135.csv" # file name for total capacity
     
 # load new buildings (copied from the indicators directory)
 bld.new <- fread(file.path(indicator.dir, 
