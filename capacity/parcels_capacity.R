@@ -1,6 +1,8 @@
+##################################################
 # Script for computing capacity for each parcel. 
 # It uses a set of proposals from an unlimited run.
 # Hana Sevcikova, PSRC, 2018-10-01
+##################################################
 
 library(data.table)
 library(raster)
@@ -90,8 +92,8 @@ propc[, has_res := any(building_type_id %in% c(19,4,12)), by = proposal_id]
 
 # remove smaller proposals and those with status_id 44
 propc <- subset(propc, is.na(pcl_bldsqft) | 
-                  (proposed_units_new > pcl_resunits & density_type == "units_per_acre") | 
-                  (proposed_units_new > pcl_nonres_sqft & density_type == "far"))
+                  (units_proposed_orig > pcl_resunits & density_type == "units_per_acre") | 
+                  (units_proposed_orig > pcl_nonres_sqft & density_type == "far"))
 propc <- subset(propc, status_id != 44)
 
 # split parcels by type (res, non-res, mix-use)
@@ -146,7 +148,7 @@ non_res_max <- non_res[, .(non_residential_sqft_prop = max(non_residential_sqft)
                           building_sqft_prop = max(building_sqft),
                           residential_units_prop = 0), by = parcel_id]
 res_units_mix_max <- res_units_mix[, .SD[which.max(residential_units)], by = parcel_id]
-non_res_mix_max <- non_res_mix[, .SD[which.max(job_capacity)], by = parcel_id]
+non_res_mix_max <- non_res_mix[, .SD[which.max(non_residential_sqft)], by = parcel_id]
 
 # combine MU max proposals into one dataset
 comb_mix_max <- merge(res_units_mix_max[, .(parcel_id, proposal_id)], 
