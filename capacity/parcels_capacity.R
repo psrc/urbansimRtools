@@ -11,13 +11,18 @@ library(raster)
 ##################
 # Where is this script
 setwd('~/R/urbansimRtools/capacity') 
-save <- TRUE # save in csv file
-res.ratio <- 50 # sampling share of residential projects on mix-use parcels
+
+# save in csv file
+save <- TRUE
+
+# sampling share of residential projects on mix-use parcels
+res.ratio <- 50 
 
 # prefix of the output file name
 file.prefix <- paste0("CapacityPcl_res", res.ratio, "-", Sys.Date())
 
-# Where are csv tables with unlimited proposals and components
+# Where are csv tables with the full set of proposals and components 
+# (ideally from an unlimited urbansim run)
 #prop.path <- "J:/Projects/Parcel\ Data/Capacity/unlimited-run-142"
 prop.path <- "/Volumes/DataTeam/Projects/Parcel\ Data/Capacity/unlimited-run-142"
 
@@ -139,14 +144,16 @@ non_res_mix <- non_res_mix[has_both_comp == TRUE | is.na(pcl_nonres_sqft) | pcl_
 non_res_mix <- non_res_mix[has_both_comp == TRUE | is.na(pcl_job_capacity) | pcl_job_capacity < job_capacity,]
 
 # select max proposal per parcel
-res_units_max <- res_units[, .(residential_units_prop = max(residential_units),
-                              building_sqft_prop = max(building_sqft),
-                              non_residential_sqft_prop = 0,
-                              job_capacity_prop = 0), by = parcel_id]
-non_res_max <- non_res[, .(non_residential_sqft_prop = max(non_residential_sqft),
-                          job_capacity_prop = max(job_capacity),
-                          building_sqft_prop = max(building_sqft),
-                          residential_units_prop = 0), by = parcel_id]
+res_units_maxt <- res_units[, .SD[which.max(residential_units)], by = parcel_id]
+res_units_max <- res_units_maxt[ , .(parcel_id, residential_units_prop = residential_units,
+                                      building_sqft_prop = building_sqft, 
+                                      non_residential_sqft_prop = 0, job_capacity_prop = 0)]
+
+non_res_maxt <- non_res[, .SD[which.max(non_residential_sqft)], by = parcel_id]
+non_res_max <- non_res_maxt[, .(parcel_id, non_residential_sqft_prop = non_residential_sqft,
+                                 job_capacity_prop = job_capacity, building_sqft_prop = building_sqft,
+                                 residential_units_prop = 0)]
+
 res_units_mix_max <- res_units_mix[, .SD[which.max(residential_units)], by = parcel_id]
 non_res_mix_max <- non_res_mix[, .SD[which.max(non_residential_sqft)], by = parcel_id]
 
