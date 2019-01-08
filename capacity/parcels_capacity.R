@@ -16,7 +16,7 @@ setwd('~/R/urbansimRtools/capacity')
 save <- TRUE
 
 # sampling share of residential projects on mix-use parcels
-res.ratio <- 50 
+res.ratio <- 100 
 
 # prefix of the output file name
 file.prefix <- paste0("CapacityPcl_res", res.ratio, "-", Sys.Date())

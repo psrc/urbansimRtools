@@ -1,6 +1,6 @@
 # Capacity computation
 
-The script `parcels_capacity.R` derives parcel-level capacity. The script `aggregate_capacity.R` aggregates the output of `parcels_capacity.R` to a higher level geography. 
+The script `parcels_capacity.R` derives parcel-level capacity. Multiple files generated via `parcels_capacity.R` can be merged together using `merge_files_for_different_ratios.R`. The script `aggregate_capacity.R` aggregates the output of either of the two scripts to a higher level geography. 
 
 ## Parcel-level
 
@@ -24,9 +24,13 @@ The final parcel-level capacity quantities are derived either from the final mer
 
 The resulting dataset is written into an csv file.
 
+## Merging 
+
+One can run the `parcels_capacity.R` script multiple times, each time with a different residential sampling ratio (`res.ratio`). The script `merge_files_for_different_ratios.R` merges the results into one file. It adds the ratio value to the corresponding column names.
+
 ## Aggregation
 
-The output file from `parcels_capacity.R` can be aggregated into a higher level geography using the script `aggregate_capacity.R`. The level of aggregation is defined by the object `geography`. Set it to `NULL` if a regional aggregation is desired. The geography id (column `{geography}_id`) must be present in the parcel-level file `parcels_geos.csv ` placed in the `lookup.path`. If further columns are desired, e.g. geography name, set the name of the file that contains those columns to `geo.file.name` and identify these additional columns in `geo.file.attributes`.
+The output files from either `parcels_capacity.R` or `merge_files_for_different_ratios.R` can be aggregated into a higher level geography using the script `aggregate_capacity.R`. The level of aggregation is defined by the object `geography`. Set it to `NULL` if a regional aggregation is desired. The geography id (column `{geography}_id`) must be present in the parcel-level file `parcels_geos.csv ` placed in the `lookup.path`. If further columns are desired, e.g. geography name, set the name of the file that contains those columns to `geo.file.name` and identify these additional columns in `geo.file.attributes`.
 
 The script can also compute columns of differences between the end year capacity and the base year, if `compute.difference` is set to `TRUE`. If desired, the final aggregated dataset is saves to a csv file. 
 
