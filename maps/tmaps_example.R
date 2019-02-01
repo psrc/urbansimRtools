@@ -7,12 +7,13 @@ library(tmap)
 library(tmaptools)
 
 create_shape <- function(df, geo.id, layer, layer.geo.id = geo.id, 
-                         path.to.shpfiles = "J:/Projects/ShapefilesWG84") {
+                         path.to.shpfiles = "J:/Projects/ShapefilesWG84",
+                         include.missing = FALSE) {
   # create an sp object
   shp <- readOGR(dsn = path.to.shpfiles, layer = layer)
   shp <- spTransform(shp, CRSobj=CRS("+init=epsg:4326"))
   # merge with data
-  merge(shp, df, by.x = layer.geo.id, by.y = geo.id, all = FALSE)
+  merge(shp, df, by.x = layer.geo.id, by.y = geo.id, all = include.missing)
 }
 
 map_polygon <- function(shp, map.attribute, interactive = TRUE, ...) {
@@ -36,8 +37,9 @@ exdata <- data.frame(city_id = c(9, 13, 15, 59),
 shp <- create_shape(exdata, 
                     geo.id = "city_id", # column in exdata used for the join 
                     layer = "JURIS_2014_WGS84", 
-                    layer.geo.id = "city_id" # column in the shapefile used for the join 
-                    #, path.to.shpfiles = "~/ForecastProducts/LUV/QC/data" # where are the shapefiles located
+                    layer.geo.id = "city_id", # column in the shapefile used for the join 
+                    #path.to.shpfiles = "~/ForecastProducts/LUV/QC/data", # where are the shapefiles located
+                    include.missing = FALSE # should missing cities be included in the map
                     )
 
 # Map the column "indicator" as polygons
