@@ -11,15 +11,15 @@
 
 #input.file <- "CapacityPcl_res50-2018-10-02.csv"
 #input.file <- "/Volumes/DataTeam/Projects/V2050/SEIS/Data_Support/script_input/CapacityIndicatorPcl_res50.csv"
-input.file <- "CapacityPcl_res0-50-100-2019-01-07.csv"
+input.file <- "CapacityPcl_res0-100-2019-01-08.csv"
 
 # to which geography to aggregate
 geography <- "city" 
-geography <- "growth_center"
+#geography <- "growth_center"
 #geography <- NULL # set to NULL if aggregating to the whole region
 
-save <- FALSE # save in csv file
-out.file.prefix <- paste0("Capacity0-50-100_", if(is.null(geography)) "region" else geography, "-", Sys.Date())
+save <- TRUE # save in csv file
+out.file.prefix <- paste0("Capacity0-100_", if(is.null(geography)) "region" else geography, "-", Sys.Date())
 
 # Where are csv lookup tables ("parcels_geos.csv", geo.file.name below)
 #lookup.path <- "J:/Projects/Parcel\ Data/Capacity/lookup-2018-10-01"
@@ -29,12 +29,12 @@ compute.difference <- TRUE # should difference between end year and base be comp
 # Merge with a dataset of the higher geography (should be csv)
 # (set to NULL if no merging desired)
 geo.file.name <- "cities_with_rgs.csv"
-geo.file.name <- "growth_centers.csv"
+#geo.file.name <- "growth_centers.csv"
 
 # which attributes to extract from geo.file.name
 geo.file.attributes <- c("county", "Juris") 
-geo.file.attributes <- c("county")
-geo.file.attributes <- c("name", "city_id")
+#geo.file.attributes <- c("county")
+#geo.file.attributes <- c("name", "city_id")
 ###################
 
 capacity.column.base <- c("DU", "NRSQF", "JOBSP", "BLSQF")

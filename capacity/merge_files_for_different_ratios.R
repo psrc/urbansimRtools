@@ -7,13 +7,15 @@
 library(data.table)
 
 # files to merge
-inputs <- c("CapacityPcl_res50-2018-10-02.csv", "CapacityPcl_res0-2019-01-07.csv", "CapacityPcl_res100-2019-01-07.csv")
+inputs <- c("CapacityPcl_res0-2019-01-07.csv", "CapacityPcl_res25-2019-01-08.csv", 
+            "CapacityPcl_res50-2018-10-02.csv", "CapacityPcl_res75-2019-01-08.csv", 
+            "CapacityPcl_res100-2019-01-07.csv")
 
 # which res.ratio each file corresponds to (in the same order as inputs)
-res.ratios <- c(50, 0, 100)
+res.ratios <- c(0, 25, 50, 75, 100)
 
 # output file
-outfile <- paste0("CapacityPcl_res0-50-100-", Sys.Date(), ".csv")
+outfile <- paste0("CapacityPcl_res0-100-", Sys.Date(), ".csv")
 
 rename.and.remove.cols <- function(dt, value, remove.base.cols = FALSE) {
   for(col in capacity.cols) {
