@@ -19,6 +19,8 @@ geography <- c("city", "tod")
 
 # parcel density grouping (either NA, exact number or a right-open interval)
 density.splits <- list(NA, 0, c(1e-6, 12), c(12, 50), c(50, 99999)) # NA means no split
+#density.splits <- NA
+
 # names used in the suffix of the output files (should be the same length as density.splits)
 density.names <- c("all", "0", "lt12", "12_50", "50+")
 
@@ -105,7 +107,8 @@ for(idens in seq_along(density.splits)) {
       geo <- geography[igeo]
       geodf <- unique(fread(file.path(lookup.path, geo.file.name[[geo]]))[, c(geo.ids[igeo], geo.file.attributes[[geo]]), 
                                                                           with = FALSE])
-      aggr <- merge(geodf[, c(geo.ids[igeo], geo.file.attributes[[geo]]), with = FALSE], aggr, by = geo.ids[igeo])
+      aggr <- merge(geodf[, c(geo.ids[igeo], geo.file.attributes[[geo]]), with = FALSE], aggr, by = geo.ids[igeo],
+                    sort = FALSE)
     }
     # set to 0 where NAs
     for(colbase in capacity.column.base) {
