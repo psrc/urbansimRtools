@@ -68,7 +68,7 @@ if(!is.null(geo.file.name) && !is.null(geography)) {
   aggr <- merge(geodf[, c(geo.id, geo.file.attributes), with = FALSE], aggr, by = geo.id)
   # set to 0 where NAs
   for(colbase in capacity.column.base) {
-    idx <- which(is.na(dt[[paste0(colbase, "base")]]))
+    idx <- which(is.na(aggr[[paste0(colbase, "base")]]))
     cols <- grep(paste0(colbase, "capacity|", colbase, "diff|", colbase, "base"), colnames(aggr), value = TRUE)
     for(col in cols) aggr[[col]][idx] = 0
   }
