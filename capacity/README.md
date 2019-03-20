@@ -34,6 +34,21 @@ The output files from either `parcels_capacity.R` or `merge_files_for_different_
 
 The script can also compute columns of differences between the end year capacity and the base year, if `compute.difference` is set to `TRUE`. If desired, the final aggregated dataset is saves to a csv file. 
 
+## Advanced Aggregation
+
+The script `aggregate_capacity_advanced.R` also allows to aggregate parcel-level capacity to a higher geography. In addition to the simple aggregation as described above, it allows to aggregate to sub-levels within a geography, e.g. city and TODs within city. One can also split the aggregation by groups of residential density. 
+
+Here the `geography` object can be a vector of the geographic groups and sub-groups. The density grouping is defined in the object `density.splits`. It is a list of density definitions, which is either `NA` (no grouping), or a single number defining the exact density, or a vector of size two defining the lower and upper bounds (treated as right-open intervals). These groups do not have to be mutually exclusive.
+
+The script generates one file per density group. The object `density.names` is a character vector that distinguishes the file names. The order of its elements corresponds to the elements in `density.splits`. I.e., the file corresponding to density `density.splits[[i]]` will contain  `density.names[i]` in its name.
+
+The output files are stored in the directory defined by the object `output.dir`, by default `capres-{current_date}`.
+
+As in the case of simple aggregation, all geography ids (constructed from `{geography}_id`) must be present in the parcel-level file defined in `parcel.lookup.name` placed in the `lookup.path`.
+
+If further columns are desired, e.g. geography names, set the name of the files that contain those columns to `geo.file.name`. It is a list with elements corresponding to each element in the `geography` object and values being the file names. Those files have to contain the corresponding `{geography}_id` column. Object `geo.file.attributes` has the same structure as `geo.file.name` and defines the additional columns from each file to be included in the resulting file.
+
+As above, the object `compute.difference` determines if columns of differences between the end year capacity and the base year should be included.
 
 
    
