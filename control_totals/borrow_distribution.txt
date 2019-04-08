@@ -1,0 +1,23 @@
+recipient_city_id	donor_city_id	recipient_city_name	donor_city_name
+36	43	Newcastle PAA	Newcastle
+58	13	Bellevue PAA	Bellevue
+134	120	PAINE FIELD AREA	Mukilteo
+136	115	Woodway MUGA	Woodway
+150	138	Auburn PAA	Auburn
+151	89	Bonney Lake PAA	Bonney Lake
+152	85	Carbonado PAA	Puyallup
+153	84	Eatonville PAA	Eatonville
+154	83	Fife Milton Overlap	Fife
+155	83	Fife PAA	Fife
+156	81	Fircrest PAA	Fircrest
+157	85	Frederickson	Puyallup
+158	77	Gig Harbor PAA	Gig Harbor
+159	79	Lakewood Steilacoom Overlap	Lakewood
+160	141	Milton PAA	Milton
+161	142	Pacific PAA	Pacific
+162	85	Puyallup PAA	Puyallup
+163	78	Roy PAA	Roy
+164	85	South Prairie PAA	Puyallup
+165	88	Sumner PAA	Sumner
+166	59	Tacoma PAA	Tacoma
+62	9	Seattle PAA	Seattle
