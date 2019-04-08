@@ -17,7 +17,7 @@ work.db <- "sandbox_hana"
 
 # should outputs be stored in the DB and should existing tables be overwritten
 store.outputs <- TRUE
-overwrite.existing <- TRUE
+overwrite.existing <- FALSE
 
 ###### End of users settings
 
