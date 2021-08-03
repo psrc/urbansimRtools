@@ -4,16 +4,21 @@ library(RMySQL)
 # Users settings
 #########
 # working directory
-setwd("~/R/urbansimRtools/control_totals")
+setwd("~/psrc/R/urbansimRtools/control_totals")
 
 # Full name of the input file containing the unrolled control totals
 CT.file <- '/Volumes/DataTeam/Projects/UrbanSim/NEW_DIRECTORY/Inputs/annual_control_totals/subregional_control_totals/controls_by_hhsize/unrolled_controls.csv'
+#CT.file <- 'unrolled_controls.csv'
 
 # baseyear DB
-base.db <- "2014_parcel_baseyear_core"
+base.db <- "2018_parcel_baseyear"
 
 # working database where outputs are stored
 work.db <- "sandbox_hana"
+
+# set base year and last year
+base.year <- 2018
+last.year <- 2050
 
 # should outputs be stored in the DB and should existing tables be overwritten
 store.outputs <- TRUE
@@ -25,7 +30,7 @@ overwrite.existing <- FALSE
 ## Functions
 ###############
 # Connecting to Mysql
-mysql.connection <- function(dbname = "2014_parcel_baseyear_core") {
+mysql.connection <- function(dbname = "2018_parcel_baseyear") {
   # credentials can be stored in a file (as one column: username, password, host)
   if(file.exists("creds.txt")) {
     creds <- read.table("creds.txt", stringsAsFactors = FALSE)
@@ -79,18 +84,18 @@ rebalance <- function() {
 # use borrowed distribution for small geographies
 set.count.by.borrowed.distr <- function(bdist, max.small = 800){
   # filter borrowed distribution 
-  aggr.base <- CTpop[year == 2014, .(tot = sum(household_count)), by = city_id]
+  aggr.base <- CTpop[year == base.year, .(tot = sum(household_count)), by = city_id]
   bdist[aggr.base, base := i.tot, on = c(recipient_city_id = "city_id")]
   bdist <- bdist[base < max.small] # consider as small geo those with HH < max.small (800)
   
   # Merge CTpop with bdist and compute donor distribution
   CTpop[bdist, donor_city_id := i.donor_city_id, on = c(city_id = "recipient_city_id")]
-  CTpop[year == 2014, hhdistr := household_count / sum(household_count), by = city_id]
-  CTpop[CTpop[year == 2014], donor_distr := i.hhdistr, on = c(donor_city_id = "city_id", year = "year", pph = "pph")]
+  CTpop[year == base.year, hhdistr := household_count / sum(household_count), by = city_id]
+  CTpop[CTpop[year == base.year], donor_distr := i.hhdistr, on = c(donor_city_id = "city_id", year = "year", pph = "pph")]
   
   # Use 2050 control to multiply donor distribution
-  CTpop[CTs[year == 2050], CThh50 := i.total_hh, on = "city_id"]
-  CTpop[year == 2014 & !is.na(donor_city_id), household_count := pmax(1, round(donor_distr * CThh50))]
+  CTpop[CTs[year == last.year], CThh50 := i.total_hh, on = "city_id"]
+  CTpop[year == base.year & !is.na(donor_city_id), household_count := pmax(1, round(donor_distr * CThh50))]
   
   # cleanup
   CTpop[, `:=`(donor_city_id = NULL, CThh50 = NULL, hhdistr = NULL, donor_distr = NULL)]
@@ -101,10 +106,11 @@ set.count.by.borrowed.distr <- function(bdist, max.small = 800){
 #####################
 # read inputs
 CTs <- fread(CT.file)
+CTs <- CTs[year >= base.year]
 
 # create all combinations of cities, year and persons
 cities <- unique(CTs$city_id)
-CTpop <- data.table(expand.grid(city_id = cities, year = sort(unique(c(2014, CTs$year))), pph = 1:7))
+CTpop <- data.table(expand.grid(city_id = cities, year = sort(unique(c(base.year, CTs$year))), pph = 1:7))
 
 # Read HHs joined on buildings and parcels from mysql (need parcels to get city_id) 
 mydb <- mysql.connection(base.db)
@@ -118,9 +124,9 @@ group by t3.city_id, (case when t1.persons > 7 then 7 else t1.persons end)")
 hhs <- data.table(fetch(qr, n = -1))
 dbClearResult(qr)
 
-hhs[, year := 2014]
+hhs[, year := base.year]
 
-# merge 2014 data with CTpop 
+# merge base year CTs with CTpop 
 CTpop[hhs, household_count := i.household_count, on = .(city_id, year, pph)]
 CTpop[is.na(household_count), household_count := 1]
 
@@ -143,13 +149,14 @@ rebalance()
 
 # create final input tables
 # HHs
-CTpop <- CTpop[year > 2014]
+CTpop <- CTpop[year > base.year]
 CTpop[, `:=`(total_number_of_households = household_count, 
              income_min = 0, income_max = -1, 
              persons_min = pph, persons_max = ifelse(pph < 7, pph, -1),
              workers_min = 0, workers_max = -1)]
 qr <- dbSendQuery(mydb, "select * from annual_household_control_totals")
 cttbl <- data.table(fetch(qr, n = -1))
+cttbl <- cttbl[year >= base.year]
 resCThh <- cttbl[!year %in% unique(CTpop$year)]
 resCThh <- rbind(resCThh, CTpop[, colnames(cttbl), with = FALSE])
 dbClearResult(qr)
@@ -157,6 +164,7 @@ dbClearResult(qr)
 # jobs
 qr <- dbSendQuery(mydb, "select * from annual_employment_control_totals")
 cttbl <- data.table(fetch(qr, n = -1))
+cttbl <- cttbl[year >= base.year]
 resCTjobs <- cttbl[!year %in% unique(CTs$year)]
 resCTjobs <- rbind(resCTjobs, 
                    CTs[, .(city_id, year, total_number_of_jobs = total_emp, home_based_status = -1, sector_id = -1)]
@@ -175,7 +183,7 @@ if(store.outputs) {
 }
 
 # Check results
-checkDT <- CTpop[year > 2014, .(total_hh = sum(household_count), total_hhpop = sum(pph * household_count)),
+checkDT <- CTpop[year > base.year, .(total_hh = sum(household_count), total_hhpop = sum(pph * household_count)),
                 by = .(city_id, year)]
 checkDT[CTs, `:=`(diff_hh = total_hh - i.total_hh, diff_hhpop = total_hhpop - i.total_hhpop),
         on = c("city_id", "year")]
