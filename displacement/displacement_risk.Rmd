@@ -12,13 +12,13 @@ library(data.table)
 
 This document describes a methodology designed for deriving households at risk of displacement due to land use zoning. It is one of many components of the displacement index measure (for details on the overall measure, ask Brian or Polina).
 
-In the past using results from a simulation, residential structures in the base year were compared to structures in the target year. Here, the goal is to update the input data from 2014 to the 2018 base year, and ideally to use updated zoning (FLU). However, as of today the new FLU has not been finilized, so any results below refer to the previous FLU dataset. In addition, we will not make the measure dependent on a specific simulation. Instead, a set of rules will be applied to the base year data. 
+In the past, using results from a simulation residential structures in the base year were compared to structures in the target year. Here, the goal is to update the input data from 2014 to the 2018 base year, and ideally to use updated zoning (FLU). However, as of today the new FLU has not been finilized, so any results below refer to the previous FLU dataset. In addition, we will not make the measure dependent on a specific simulation. Instead, a set of rules will be applied to the base year data. 
 
 ### Inputs and Code
 
 This R markdown file is located in the [displacement GitHub repo]( https://github.com/psrc/urbansimRtools/blob/master/displacement/displacement_risk.Rmd). 
 
-Input data are csv files exported from the test run 62. Note that only baseyear data and development project proposals created in the first year are needed, which would be the same for any run. Thus, the method is not dependent on simulation results. The only run-dependent factor is how the re-development filter is set. 
+Input data are csv files exported from the test run 62. Note that only data in the baseyear and development project proposals created in the first year are needed, which would be the same for any run. Thus, the method is not dependent on simulation results. The only run-dependent factor is how the re-development filter is set. 
 
 The following datasets are needed:
 
@@ -134,7 +134,7 @@ comp.factor <- 2
 redpropm.build <- redpropm[units_est > comp.factor*existing_units | (units_est > existing_units & parcel_id %in% mpd[, parcel_id])]
 ```
 
-4. Select parcels where the number of proposed units is `r comp.factor` times larger than the number of existing units, or in case of MPDs, simply larger  than the number of existing units: `r nrow(redpropm.build)` parcels. *The choice of this factor (here `r comp.factor`) greatly influences the results and is open for a debate.*
+4. Select parcels where the number of proposed units is (strictly) `r comp.factor` times  larger than the number of existing units, or in case of MPDs, simply larger than the number of existing units: `r nrow(redpropm.build)` parcels. *The choice of this factor (here `r comp.factor`) greatly influences the results and is open for a debate.*
 
 ```{r, echo=FALSE}
 # select households that live on the parcels with selected proposals
@@ -153,3 +153,28 @@ fwrite(res, file = paste0("hh_at_displacement_risk-", Sys.Date(), ".csv"))
 ```
 
 6. Export outputs on parcel level.
+
+### Results
+
+Here is a summary of the results.
+
+* County level:
+
+    ```{r echo = FALSE}
+# summary
+hhtot <- hh[, .N, by = "parcel_id"]
+hhtot[res, hh_at_risk := i.HHatRisk, on = "parcel_id"][is.na(hh_at_risk), hh_at_risk := 0]
+hhtot[pcl, county_id := i.county_id, on = "parcel_id"]
+
+resout <- hhtot[, .(hh_at_risk = sum(hh_at_risk), percent = round(sum(hh_at_risk)/sum(N)*100, 1)), by = county_id]
+
+merge(data.table(county_id = c(33, 35, 53, 61), county_name = c("King", "Kitsap", "Pierce", "Snohomish")),
+                resout)
+```
+
+* Regional total:
+
+    ```{r echo = FALSE}
+# total
+hhtot[, .(hh_at_risk = sum(hh_at_risk), percent = round(sum(hh_at_risk)/sum(N)*100, 1))]
+```

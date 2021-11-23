@@ -73,8 +73,19 @@ redpropm.build <- redpropm[units_est > 3*existing_units | (units_est > existing_
 selhh <- hh[parcel_id %in% redpropm.build[, parcel_id]]
 
 # output
-res <- selhh[, .(DUatRisk = .N), by = parcel_id]
+res <- selhh[, .(HHatRisk = .N), by = parcel_id]
 setkey(res, parcel_id)
 res[pcl, `:=`(census_tract_id = i.census_tract_id, census_2010_block_id = i.census_2010_block_id)]
 
-fwrite(res, file = "du_at_displacement_risk.csv")
+#fwrite(res, file = paste0("hh_at_displacement_risk-", Sys.Date(), ".csv"))
+
+# summary
+hhtot <- hh[, .N, by = "parcel_id"]
+hhtot[res, hh_at_risk := i.HHatRisk, on = "parcel_id"][is.na(hh_at_risk), hh_at_risk := 0]
+hhtot[pcl, county_id := i.county_id, on = "parcel_id"]
+
+resout <- hhtot[, .(hh_at_risk = sum(hh_at_risk), percent = round(sum(hh_at_risk)/sum(N)*100, 1)), by = county_id]
+merge(data.table(county_id = c(33, 35, 53, 61), county_name = c("King", "Kitsap", "Pierce", "Snohomish")),
+                resout)
+# total
+hhtot[, .(hh_at_risk = sum(hh_at_risk), percent = round(sum(hh_at_risk)/sum(N)*100, 1))]
