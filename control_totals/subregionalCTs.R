@@ -8,7 +8,7 @@ setwd("~/psrc/R/urbansimRtools/control_totals")
 
 # Full name of the input file containing the unrolled control totals
 CT.file <- '/Volumes/DataTeam/Projects/UrbanSim/NEW_DIRECTORY/Inputs/annual_control_totals/subregional_control_totals/controls_by_hhsize/unrolled_controls.csv'
-#CT.file <- 'unrolled_controls.csv'
+CT.file <- 'unrolled_controls-2021-08-31.csv'
 
 # baseyear DB
 base.db <- "2018_parcel_baseyear"

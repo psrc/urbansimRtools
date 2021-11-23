@@ -1,0 +1,80 @@
+library(data.table)
+setwd("~/psrc/R/urbansimRtools/displacement")
+
+# load data
+run <- "run62" # just to get up to date base year data
+pcl <- fread(file.path(run, "2018", "parcels.csv"))
+setkey(pcl, parcel_id)
+bld <- fread(file.path(run, "2018", "buildings.csv"))
+setkey(bld, building_id)
+hh <- fread(file.path(run, "2018", "households.csv"))[building_id > 0]
+setkey(hh, building_id)
+hh[bld, parcel_id := i.parcel_id]
+#bld50 <- fread(file.path(run, "2050", "buildings.csv")) # for checking (not used)
+
+# correct wrong year_built
+bld[year_built > 2020, year_built := 0]
+
+# load development proposals
+mpd <- fread(file.path(run, "2018", "development_project_proposals.csv"))
+dprop <- fread(file.path(run, "2019", "development_project_proposals.csv"))
+setkey(dprop, proposal_id)
+cdprop <- fread(file.path(run, "2019", "development_project_proposal_components.csv"))
+setkey(cdprop, proposal_id, parcel_id)
+
+# remove projects on parcels where there are MPDs
+devmpd <- mpd[start_year < 2021]
+dprop <- dprop[!parcel_id %in% devmpd[,parcel_id]]
+mpd <- mpd[start_year > 2021]
+
+# join components with proposals
+cdprop <- cdprop[proposal_id %in% dprop[, proposal_id]]
+cdprop[dprop, parcel_id := i.parcel_id]
+
+# select occupied residential buildings that are older than 10 years
+age.limit <- 10
+rbld <- bld[residential_units > 0 & building_id %in% hh[, building_id] & year_built < (2020 - age.limit)]
+
+# select proposals that are on parcels with selected residential buildings
+redprop <- dprop[parcel_id %in% rbld[, parcel_id]]
+setkey(redprop, proposal_id, parcel_id)
+
+# select buildings that are on parcels that have at least one proposal
+redbld <- rbld[parcel_id %in% redprop[, parcel_id]]
+setkey(redbld, building_id, parcel_id)
+
+# mark residential and non-res proposals
+proptype <- cdprop[proposal_id %in% redprop[, proposal_id]][, 
+                            .(is_res = any(building_type_id %in% c(19, 4, 12)), 
+                                is_nonres = any(!building_type_id %in% c(19, 4, 12))), by = proposal_id]
+setkey(proptype, proposal_id)
+redprop <- merge(redprop, proptype, by = "proposal_id")
+
+# for non-res proposals, estimate the number of units as if the project would be MF residential
+redprop[, units_est := units_proposed]
+redprop[is_nonres == TRUE, units_est := round(units_proposed/1000)]
+
+# select only the largest proposals
+redprop[redprop[, .I[which.max(units_est)], by = parcel_id]$V1, is_max := TRUE]
+redpropm <- redprop[!is.na(is_max) & is_max == TRUE]
+
+# sum existing DUs and improvement values for each of the affected parcels
+redpcl <- redbld[, .(DU = sum(residential_units), IV = sum(improvement_value)), by = parcel_id]
+setkey(redpcl, parcel_id)
+
+# join with existing units
+redpropm[redpcl, existing_units := i.DU, on = "parcel_id"]
+
+# select proposals where the number of proposed units is 3 times of the existing units, 
+# or if MPD, proposed should be simply larger than existing 
+redpropm.build <- redpropm[units_est > 3*existing_units | (units_est > existing_units & parcel_id %in% mpd[, parcel_id])]
+
+# select households that live on the parcels with selected proposals
+selhh <- hh[parcel_id %in% redpropm.build[, parcel_id]]
+
+# output
+res <- selhh[, .(DUatRisk = .N), by = parcel_id]
+setkey(res, parcel_id)
+res[pcl, `:=`(census_tract_id = i.census_tract_id, census_2010_block_id = i.census_2010_block_id)]
+
+fwrite(res, file = "du_at_displacement_risk.csv")
