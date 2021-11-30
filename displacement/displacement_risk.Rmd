@@ -2,75 +2,85 @@
 title: "Capacity-Based Displacement Risk"
 output: pdf_document
 author: "Hana Ševčíková"
-date: "11/23/2021"
+date: "11/29/2021"
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(data.table)
+BY <- 2018
+run <- "run62" # just to get up to date base year data
+#run <- "BY14run89"
 ```
 
 This document describes a methodology designed for deriving households at risk of displacement due to land use zoning. It is one of many components of the displacement index measure (for details on the overall measure, ask Brian or Polina).
 
-In the past, using results from a simulation residential structures in the base year were compared to structures in the target year. Here, the goal is to update the input data from 2014 to the 2018 base year, and ideally to use updated zoning (FLU). However, as of today the new FLU has not been finilized, so any results below refer to the previous FLU dataset. In addition, we will not make the measure dependent on a specific simulation. Instead, a set of rules will be applied to the base year data. 
+In the past, using results from a simulation residential structures in the base year were compared to structures in the target year. Here, the goal is to update the input data from 2014 to the 2018 base year, and ideally to use updated zoning (FLU). However, as of today the new FLU has not been finilized, so any results below refer to the previous FLU dataset. In addition, we will not make the measure dependent on a specific simulation. Instead, a set of rules will be applied to the base year data.
+
+`r if(BY < 2018) {paste("\n\n**Note that bellow are results from applying the method to ", BY, "base year data!!!**\n")}`
+
 
 ### Inputs and Code
 
 This R markdown file is located in the [displacement GitHub repo]( https://github.com/psrc/urbansimRtools/blob/master/displacement/displacement_risk.Rmd). 
 
-Input data are csv files exported from the test run 62. Note that only data in the baseyear and development project proposals created in the first year are needed, which would be the same for any run. Thus, the method is not dependent on simulation results. The only run-dependent factor is how the re-development filter is set. 
+Input data are csv files exported from run `r substr(run, nchar(run)-1, nchar(run))` `r if(BY < 2018) {"(Vision 2050 run)"} else {"(test run)"}`. Note that only data in the baseyear and development project proposals created in the first year are needed, which would be the same for any run. Thus, the method is not dependent on simulation results. The only run-dependent factor is how the re-development filter is set. 
 
 The following datasets are needed:
 
-* 2018/buildings.csv
-* 2018/parcels.csv
-* 2018/households.csv
-* 2018/development_project_proposals.csv (MPDs)
-* 2019/development_project_proposals.csv
-* 2019/development_project_proposal_components.csv
+* `r BY`/buildings.csv
+* `r BY`/parcels.csv
+* `r BY`/households.csv
+* `r BY`/development_project_proposals.csv (MPDs)
+* `r BY + 1`/development_project_proposals.csv
+* `r BY + 1`/development_project_proposal_components.csv
+
 
 ### Data Cleaning and Filtering
 
 ```{r, echo=FALSE}
 # load data
-run <- "run62" # just to get up to date base year data
-pcl <- fread(file.path(run, "2018", "parcels.csv"))
+pcl <- fread(file.path(run, BY, "parcels.csv"))
 setkey(pcl, parcel_id)
-bld <- fread(file.path(run, "2018", "buildings.csv"))
+bld <- fread(file.path(run, BY, "buildings.csv"))
 setkey(bld, building_id)
-hh <- fread(file.path(run, "2018", "households.csv"))[building_id > 0]
+hh <- fread(file.path(run, BY, "households.csv"))[building_id > 0]
 setkey(hh, building_id)
 hh[bld, parcel_id := i.parcel_id]
 # load development proposals
-mpd <- fread(file.path(run, "2018", "development_project_proposals.csv"))
-dprop <- fread(file.path(run, "2019", "development_project_proposals.csv"))
+mpd <- fread(file.path(run, BY, "development_project_proposals.csv"))
+dprop <- fread(file.path(run, BY + 1, "development_project_proposals.csv"))
 setkey(dprop, proposal_id)
-cdprop <- fread(file.path(run, "2019", "development_project_proposal_components.csv"))
+cdprop <- fread(file.path(run, BY + 1, "development_project_proposal_components.csv"))
 setkey(cdprop, proposal_id, parcel_id)
 
 # remove projects on parcels where there are MPDs
-devmpd <- mpd[start_year < 2021]
+devmpd <- mpd[start_year <= BY + 3]
 dprop <- dprop[!parcel_id %in% devmpd[,parcel_id]]
-mpd <- mpd[start_year > 2021]
-
+mpd <- mpd[start_year > BY + 3]
+if(BY == 2018){
+# temporary fix related to an issue of creating new development projects in run 62 
+dprop[bld[, .(is_redevelopment = 0, .N), by = parcel_id], has_bld := i.N > 0, on = c("parcel_id", "is_redevelopment")][is.na(has_bld), has_bld := FALSE]
+dprop <- dprop[is_redevelopment == 1 | !has_bld]
+}
 # join components with proposals
 cdprop <- cdprop[proposal_id %in% dprop[, proposal_id]]
 cdprop[dprop, parcel_id := i.parcel_id]
 ```
 
-* Remove MPDs with start year smaller than 2021. Development projects on these parcels will not be considered. It affects `r nrow(devmpd[, .N, by = parcel_id])` parcels. *Here we are assuming that the removed MPDs are already built and therefore households on these parcels are not at risk.*  
+* Remove MPDs with start year smaller than `r BY + 4`. Development projects on these parcels will not be considered. It affects `r nrow(devmpd[, .N, by = parcel_id])` parcels. *Here we are assuming that the removed MPDs are already built and therefore households on these parcels are not at risk.*  
 
-* Some building records have unrealisticaly large year built, so we replace it with 0 and treat the year built in these records as missing. Specifically, `r nrow(bld[year_built > 2020])` buildings have `year_built > 2020` and thus are set to `year_built = 0`.
+* Some building records have unrealisticaly large year built, so we replace it with 0 and treat the year built in these records as missing. Specifically, `r nrow(bld[year_built > BY + 2])` buildings have `year_built > ` `r BY + 2` and thus are set to `year_built = 0`.
 
 ```{r, echo=FALSE}
 # correct wrong year_built
-bld[year_built > 2020, year_built := 0]
+bld[year_built > BY + 2, year_built := 0]
 ```
 
 ```{r, echo=FALSE}
 # select occupied residential buildings that are older than 10 years
-age.limit <- 10
-rbld <- bld[residential_units > 0 & building_id %in% hh[, building_id] & year_built < (2020 - age.limit)]
+age.limit <- 8
+rbld <- bld[residential_units > 0 & building_id %in% hh[, building_id] & year_built < (BY + 2 - age.limit)]
 
 # select proposals that are on parcels with selected residential buildings
 redprop <- dprop[parcel_id %in% rbld[, parcel_id]]
@@ -84,7 +94,7 @@ setkey(redbld, building_id, parcel_id)
 * Use only buildings that:
     * have residential units, 
     * are occupied by a household, 
-    * are older than 10 years (*here assuming that buildings less than 30 years old are too young to destroy*), and 
+    * are older than `r age.limit` years (*here assuming that buildings less than about 30 years old are too young to destroy; also, the value of 8 is used in the re-development filter of the simulation run*), and 
     * there is a development proposal on its parcel.
 
     Result: `r nrow(redbld)` buildings on `r nrow(redbld[, .N, by = parcel_id])` parcels
@@ -130,11 +140,11 @@ redpropm[redpcl, existing_units := i.DU, on = "parcel_id"]
 ```{r, echo=FALSE}
 # select proposals where the number of proposed units is 2 times of the existing units, 
 # or if MPD, proposed should be simply larger than existing 
-comp.factor <- 2
+comp.factor <- 1
 redpropm.build <- redpropm[units_est > comp.factor*existing_units | (units_est > existing_units & parcel_id %in% mpd[, parcel_id])]
 ```
 
-4. Select parcels where the number of proposed units is (strictly) `r comp.factor` times  larger than the number of existing units, or in case of MPDs, simply larger than the number of existing units: `r nrow(redpropm.build)` parcels. *The choice of this factor (here `r comp.factor`) greatly influences the results and is open for a debate.*
+4. Select parcels where the number of proposed units is (strictly) `r comp.factor ` time(s) larger than the number of existing units, or in case of MPDs, simply larger than the number of existing units: `r nrow(redpropm.build)` parcels. *The choice of this factor (here `r comp.factor`) greatly influences the results and is open for a debate.*
 
 ```{r, echo=FALSE}
 # select households that live on the parcels with selected proposals
@@ -147,12 +157,15 @@ selhh <- hh[parcel_id %in% redpropm.build[, parcel_id]]
 # output
 res <- selhh[, .(HHatRisk = .N), by = parcel_id]
 setkey(res, parcel_id)
-res[pcl, `:=`(census_tract_id = i.census_tract_id, census_2010_block_id = i.census_2010_block_id)]
+res[pcl, `:=`(census_tract_id = i.census_tract_id)]
+if("census_2010_block_id" %in% colnames(pcl))
+    res[pcl, `:=`(census_2010_block_id = i.census_2010_block_id)]
 
-fwrite(res, file = paste0("hh_at_displacement_risk-", Sys.Date(), ".csv"))
+if(BY == 2018)
+    fwrite(res, file = paste0("hh_at_displacement_risk-", Sys.Date(), ".csv"))
 ```
 
-6. Export outputs on parcel level.
+`r if(BY == 2018) {"6. Export outputs on parcel level.\n"}`
 
 ### Results
 
@@ -166,7 +179,8 @@ hhtot <- hh[, .N, by = "parcel_id"]
 hhtot[res, hh_at_risk := i.HHatRisk, on = "parcel_id"][is.na(hh_at_risk), hh_at_risk := 0]
 hhtot[pcl, county_id := i.county_id, on = "parcel_id"]
 
-resout <- hhtot[, .(hh_at_risk = sum(hh_at_risk), percent = round(sum(hh_at_risk)/sum(N)*100, 1)), by = county_id]
+resout <- hhtot[, .(hh_at_risk = sum(hh_at_risk), hh_total = sum(N), 
+                    percent = round(sum(hh_at_risk)/sum(N)*100, 1)), by = county_id]
 
 merge(data.table(county_id = c(33, 35, 53, 61), county_name = c("King", "Kitsap", "Pierce", "Snohomish")),
                 resout)
@@ -176,5 +190,5 @@ merge(data.table(county_id = c(33, 35, 53, 61), county_name = c("King", "Kitsap"
 
     ```{r echo = FALSE}
 # total
-hhtot[, .(hh_at_risk = sum(hh_at_risk), percent = round(sum(hh_at_risk)/sum(N)*100, 1))]
+hhtot[, .(hh_at_risk = sum(hh_at_risk), hh_total = sum(N), percent = round(sum(hh_at_risk)/sum(N)*100, 1))]
 ```

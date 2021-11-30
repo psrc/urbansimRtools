@@ -3,37 +3,43 @@ setwd("~/psrc/R/urbansimRtools/displacement")
 
 # load data
 run <- "run62" # just to get up to date base year data
-pcl <- fread(file.path(run, "2018", "parcels.csv"))
+run <- "BY14run89"
+BY <- 2014
+pcl <- fread(file.path(run, BY, "parcels.csv"))
 setkey(pcl, parcel_id)
-bld <- fread(file.path(run, "2018", "buildings.csv"))
+bld <- fread(file.path(run, BY, "buildings.csv"))
 setkey(bld, building_id)
-hh <- fread(file.path(run, "2018", "households.csv"))[building_id > 0]
+hh <- fread(file.path(run, BY, "households.csv"))[building_id > 0]
 setkey(hh, building_id)
 hh[bld, parcel_id := i.parcel_id]
-#bld50 <- fread(file.path(run, "2050", "buildings.csv")) # for checking (not used)
 
 # correct wrong year_built
-bld[year_built > 2020, year_built := 0]
+bld[year_built > BY + 2, year_built := 0]
 
 # load development proposals
-mpd <- fread(file.path(run, "2018", "development_project_proposals.csv"))
-dprop <- fread(file.path(run, "2019", "development_project_proposals.csv"))
+mpd <- fread(file.path(run, BY, "development_project_proposals.csv"))
+dprop <- fread(file.path(run, BY + 1, "development_project_proposals.csv"))
 setkey(dprop, proposal_id)
-cdprop <- fread(file.path(run, "2019", "development_project_proposal_components.csv"))
+cdprop <- fread(file.path(run, BY + 1, "development_project_proposal_components.csv"))
 setkey(cdprop, proposal_id, parcel_id)
 
 # remove projects on parcels where there are MPDs
-devmpd <- mpd[start_year < 2021]
+devmpd <- mpd[start_year <= BY + 3]
 dprop <- dprop[!parcel_id %in% devmpd[,parcel_id]]
-mpd <- mpd[start_year > 2021]
+if(BY == 2018){
+# temporary fix related to an issue of creating new development projects in run 62 
+dprop[bld[, .(is_redevelopment = 0, .N), by = parcel_id], has_bld := i.N > 0, on = c("parcel_id", "is_redevelopment")][is.na(has_bld), has_bld := FALSE]
+dprop <- dprop[is_redevelopment == 1 | !has_bld]
+}
+mpd <- mpd[start_year > BY + 3]
 
 # join components with proposals
 cdprop <- cdprop[proposal_id %in% dprop[, proposal_id]]
 cdprop[dprop, parcel_id := i.parcel_id]
 
 # select occupied residential buildings that are older than 10 years
-age.limit <- 10
-rbld <- bld[residential_units > 0 & building_id %in% hh[, building_id] & year_built < (2020 - age.limit)]
+age.limit <- 8
+rbld <- bld[residential_units > 0 & building_id %in% hh[, building_id] & year_built < (BY + 2 - age.limit)]
 
 # select proposals that are on parcels with selected residential buildings
 redprop <- dprop[parcel_id %in% rbld[, parcel_id]]
@@ -65,9 +71,10 @@ setkey(redpcl, parcel_id)
 # join with existing units
 redpropm[redpcl, existing_units := i.DU, on = "parcel_id"]
 
-# select proposals where the number of proposed units is 3 times of the existing units, 
+# select proposals where the number of proposed units is 2 times of the existing units, 
 # or if MPD, proposed should be simply larger than existing 
-redpropm.build <- redpropm[units_est > 3*existing_units | (units_est > existing_units & parcel_id %in% mpd[, parcel_id])]
+comp.factor <- 1
+redpropm.build <- redpropm[units_est > comp.factor*existing_units | (units_est > existing_units & parcel_id %in% mpd[, parcel_id])]
 
 # select households that live on the parcels with selected proposals
 selhh <- hh[parcel_id %in% redpropm.build[, parcel_id]]
@@ -75,7 +82,10 @@ selhh <- hh[parcel_id %in% redpropm.build[, parcel_id]]
 # output
 res <- selhh[, .(HHatRisk = .N), by = parcel_id]
 setkey(res, parcel_id)
-res[pcl, `:=`(census_tract_id = i.census_tract_id, census_2010_block_id = i.census_2010_block_id)]
+res[pcl, `:=`(census_tract_id = i.census_tract_id)]
+if("census_2010_block_id" %in% colnames(pcl))
+    res[pcl, `:=`(census_2010_block_id = i.census_2010_block_id)]
+
 
 #fwrite(res, file = paste0("hh_at_displacement_risk-", Sys.Date(), ".csv"))
 
@@ -84,8 +94,9 @@ hhtot <- hh[, .N, by = "parcel_id"]
 hhtot[res, hh_at_risk := i.HHatRisk, on = "parcel_id"][is.na(hh_at_risk), hh_at_risk := 0]
 hhtot[pcl, county_id := i.county_id, on = "parcel_id"]
 
-resout <- hhtot[, .(hh_at_risk = sum(hh_at_risk), percent = round(sum(hh_at_risk)/sum(N)*100, 1)), by = county_id]
+resout <- hhtot[, .(hh_at_risk = sum(hh_at_risk), hh_total = sum(N), 
+                    percent = round(sum(hh_at_risk)/sum(N)*100, 1)), by = county_id]
 merge(data.table(county_id = c(33, 35, 53, 61), county_name = c("King", "Kitsap", "Pierce", "Snohomish")),
                 resout)
 # total
-hhtot[, .(hh_at_risk = sum(hh_at_risk), percent = round(sum(hh_at_risk)/sum(N)*100, 1))]
+hhtot[, .(hh_at_risk = sum(hh_at_risk), hh_total = sum(N), percent = round(sum(hh_at_risk)/sum(N)*100, 1))]
