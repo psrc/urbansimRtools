@@ -3,8 +3,8 @@ setwd("~/psrc/R/urbansimRtools/displacement")
 
 # load data
 run <- "run62" # just to get up to date base year data
-run <- "BY14run89"
-BY <- 2014
+#run <- "BY14run89"
+BY <- 2018
 pcl <- fread(file.path(run, BY, "parcels.csv"))
 setkey(pcl, parcel_id)
 bld <- fread(file.path(run, BY, "buildings.csv"))
@@ -86,14 +86,17 @@ res[pcl, `:=`(census_tract_id = i.census_tract_id)]
 if("census_2010_block_id" %in% colnames(pcl))
     res[pcl, `:=`(census_2010_block_id = i.census_2010_block_id)]
 
-
-#fwrite(res, file = paste0("hh_at_displacement_risk-", Sys.Date(), ".csv"))
-
-# summary
 hhtot <- hh[, .N, by = "parcel_id"]
 hhtot[res, hh_at_risk := i.HHatRisk, on = "parcel_id"][is.na(hh_at_risk), hh_at_risk := 0]
 hhtot[pcl, county_id := i.county_id, on = "parcel_id"]
 
+if(BY == 2018){
+    resall <- hhtot[pcl, .(parcel_id, county_id, census_2010_block_id = i.census_2010_block_id, 
+                           census_tract_id = i.census_tract_id, hh_at_risk, hh_total = N), on = "parcel_id"][!is.na(hh_total)]
+    #fwrite(resall, file = paste0("hh_at_displacement_risk-", Sys.Date(), ".csv"))
+}
+
+# summary
 resout <- hhtot[, .(hh_at_risk = sum(hh_at_risk), hh_total = sum(N), 
                     percent = round(sum(hh_at_risk)/sum(N)*100, 1)), by = county_id]
 merge(data.table(county_id = c(33, 35, 53, 61), county_name = c("King", "Kitsap", "Pierce", "Snohomish")),
