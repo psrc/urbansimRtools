@@ -3,8 +3,11 @@ setwd("~/psrc/R/urbansimRtools/displacement")
 
 # load data
 run <- "run62" # just to get up to date base year data
-#run <- "BY14run89"
 BY <- 2018
+run <- "BY14run89"
+BY <- 2014
+save.output <- TRUE
+
 pcl <- fread(file.path(run, BY, "parcels.csv"))
 setkey(pcl, parcel_id)
 bld <- fread(file.path(run, BY, "buildings.csv"))
@@ -90,10 +93,13 @@ hhtot <- hh[, .N, by = "parcel_id"]
 hhtot[res, hh_at_risk := i.HHatRisk, on = "parcel_id"][is.na(hh_at_risk), hh_at_risk := 0]
 hhtot[pcl, county_id := i.county_id, on = "parcel_id"]
 
-if(BY == 2018){
-    resall <- hhtot[pcl, .(parcel_id, county_id, census_2010_block_id = i.census_2010_block_id, 
+if(save.output){
+    if("census_2010_block_id" %in% colnames(pcl))
+        resall <- hhtot[pcl, .(parcel_id, county_id, census_2010_block_id = i.census_2010_block_id, 
                            census_tract_id = i.census_tract_id, hh_at_risk, hh_total = N), on = "parcel_id"][!is.na(hh_total)]
-    #fwrite(resall, file = paste0("hh_at_displacement_risk-", Sys.Date(), ".csv"))
+    else resall <- hhtot[pcl, .(parcel_id, county_id, census_tract_id = i.census_tract_id, hh_at_risk, hh_total = N), 
+                        on = "parcel_id"][!is.na(hh_total)]
+    fwrite(resall, file = paste0("hh_at_displacement_risk-BY", BY, "-", Sys.Date(), ".csv"))
 }
 
 # summary
