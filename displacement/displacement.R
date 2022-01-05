@@ -2,11 +2,11 @@ library(data.table)
 setwd("~/psrc/R/urbansimRtools/displacement")
 
 # load data
-run <- "run62" # just to get up to date base year data
+run <- "run63" # just to get up to date base year data
 BY <- 2018
-run <- "BY14run89"
-BY <- 2014
-save.output <- TRUE
+#run <- "BY14run89"
+#BY <- 2014
+save.output <- FALSE
 
 pcl <- fread(file.path(run, BY, "parcels.csv"))
 setkey(pcl, parcel_id)
@@ -29,7 +29,7 @@ setkey(cdprop, proposal_id, parcel_id)
 # remove projects on parcels where there are MPDs
 devmpd <- mpd[start_year <= BY + 3]
 dprop <- dprop[!parcel_id %in% devmpd[,parcel_id]]
-if(BY == 2018){
+if(BY == 2018 && run == "run62"){
 # temporary fix related to an issue of creating new development projects in run 62 
 dprop[bld[, .(is_redevelopment = 0, .N), by = parcel_id], has_bld := i.N > 0, on = c("parcel_id", "is_redevelopment")][is.na(has_bld), has_bld := FALSE]
 dprop <- dprop[is_redevelopment == 1 | !has_bld]

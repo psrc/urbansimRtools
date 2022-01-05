@@ -2,26 +2,26 @@
 title: "Capacity-Based Displacement Risk"
 output: pdf_document
 author: "Hana Ševčíková"
-date: "11/29/2021"
+date: "01/05/2022"
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(data.table)
 BY <- 2018
-run <- "run62" # just to get up to date base year data
+run <- "run63" # just to get up to date base year data
 #run <- "BY14run89"
 save.output <- TRUE
 ```
 
 This document describes a methodology designed for deriving households at risk of displacement due to land use zoning. It is one of many components of the displacement index measure (for details on the overall measure, ask Brian or Polina).
 
-In the past, using results from a simulation residential structures in the base year were compared to structures in the target year. Here, the goal is to update the input data from 2014 to the 2018 base year, and ideally to use updated zoning (FLU). However, as of today the new FLU has not been finilized, so any results below refer to the previous FLU dataset. In addition, we will not make the measure dependent on a specific simulation. Instead, a set of rules will be applied to the base year data.
+In the past, using results from a simulation residential structures in the base year were compared to structures in the target year. Here, the goal is to update the input data from 2014 to the 2018 base year, and ideally to use updated zoning (FLU). However, as of today the new FLU has not been finalized, so any results below refer to the previous FLU dataset. In addition, we will not make the measure dependent on a specific simulation. Instead, a set of rules will be applied to the base year data.
 
 `r if(BY < 2018) {paste("\n\n**Note that bellow are results from applying the method to ", BY, "base year data!!!**\n")}`
 
 
-### Inputs and Code
+## Inputs and Code
 
 This R markdown file is located in the [displacement GitHub repo]( https://github.com/psrc/urbansimRtools/blob/master/displacement/displacement_risk.Rmd). 
 
@@ -37,7 +37,7 @@ The following datasets are needed:
 * `r BY + 1`/development_project_proposal_components.csv
 
 
-### Data Cleaning and Filtering
+## Data Cleaning and Filtering
 
 ```{r, echo=FALSE}
 # load data
@@ -102,7 +102,7 @@ setkey(redbld, building_id, parcel_id)
     
 * Use only development proposals that are on parcels with buildings selected in the previous step: `r nrow(redprop)` proposals on `r nrow(redprop[, .N, by = parcel_id])` parcels
 
-### Method
+## Method
 
 ```{r, echo=FALSE}
 # mark residential and non-res proposals
@@ -145,7 +145,7 @@ comp.factor <- 1
 redpropm.build <- redpropm[units_est > comp.factor*existing_units | (units_est > existing_units & parcel_id %in% mpd[, parcel_id])]
 ```
 
-4. Select parcels where the number of proposed units is (strictly) `r comp.factor ` time(s) larger than the number of existing units, or in case of MPDs, simply larger than the number of existing units: `r nrow(redpropm.build)` parcels. *The choice of this factor (here `r comp.factor`) greatly influences the results and is open for a debate.*
+4. Select parcels where the number of proposed units is (strictly) `r comp.factor ` time(s) larger than the number of existing units, or in case of MPDs, simply larger than the number of existing units: `r nrow(redpropm.build)` parcels. *The choice of this factor greatly influences the results. We decided on value of 1 as it calibrates well when comparing results to our previous method.*
 
 ```{r, echo=FALSE}
 # select households that live on the parcels with selected proposals
@@ -180,7 +180,7 @@ if(save.output){
 
 `r if(BY == 2018) {"6. Export outputs on parcel level.\n"}`
 
-### Results
+## Results
 
 Here is a summary of the results.
 
@@ -201,3 +201,37 @@ merge(data.table(county_id = c(33, 35, 53, 61), county_name = c("King", "Kitsap"
 # total
 hhtot[, .(hh_at_risk = sum(hh_at_risk), hh_total = sum(N), percent = round(sum(hh_at_risk)/sum(N)*100, 1))]
 ```
+
+## Comparison to 2014
+
+### Original method
+
+The following table show results used in the previous calculation of the displacement index (values compiled by Polina). The method was dependent on a particular simulation and worked with dwelling units, rather than households and occupied units. 
+
+* County level:
+
+    ```{r echo = FALSE}
+res14 <- fread("Displacement_risk_hh_at_risk_region_summary.csv")
+res14out <- res14[, .(county_id, county_name, at_risk = at_risk_2014by, total = hh_total_2014by_old, percent = per_atrisk_2014by)]
+res14out[county_id != 0]
+```
+
+* Regional total:
+
+    ```{r echo = FALSE}
+res14out[county_id == 0][, `:=`(county_id = NULL, county_name = NULL)][]
+```
+
+
+
+### New method
+
+If we apply our new proposed method to the 2014 base year data (using run 89), the results look as follows:
+
+![](summary2014.png)
+
+It can be observed that:
+
+* The new method is more conservative than the original method.
+* The biggest difference between 2014 and 2018 is in the Kitsap county. This is due to the fact that in the 2018 base year we updated the environmental features which resulted in less parcels to be locked out for development, especially along shoreline buffers. 
+
