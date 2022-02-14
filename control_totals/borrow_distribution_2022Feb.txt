@@ -1,0 +1,8 @@
+recipient_city_id	donor_city_id	recipient_city_name	donor_city_name
+48	1	Bellevue PAA	Bellevue
+57	19	Newcastle PAA	Newcastle
+95	41	Pacific (Pierce)	Pacific (King)
+175	153	Woodway MUGA	Woodway
+168	141	PAINE FIELD AREA	Mukilteo
+167	140	Mountlake Terrace MUGA	Mountlake Terrace 
+174	152	Sultan UGA	Sultan
