@@ -61,14 +61,8 @@ hhs <- psrc_pums_count(ref_data, group_vars="pph", incl_na=FALSE) %>%           
 hhs[, c("year", "pph"):=lapply(.SD, as.integer), .SDcols=c("year", "pph")]
 ref_data1 <- ungroup(ref_data) %>% filter(if_any(c(workers, income), ~ !is.na(.))) %>% 
   group_by(pph) %>% group_by(interact(workers, income), .add=TRUE) 
-hhs_full <- suppressMessages(summarize(ref_data1,
-                               count:=survey_total(na.rm=TRUE),
-                               share:=survey_prop(),
-                               .fill="Total")) %>%                                                 # Counts by full breakdown of CT categories
-  purrr::modify_if(is.factor, as.character) %>% setDT() %>%
-  .[, grep("_se", colnames(.)):=lapply(.SD, function(x) x * 1.645), .SDcols=grep("_se", colnames(.))] %>%
-  setnames(grep("_se", colnames(.)), stringr::str_replace(grep("_se", colnames(.), value=TRUE), "_se", "_moe")) %>% 
-  .[income!="Total", .(year, pph, workers, income, count, share)] %>% .[, year:=base.year]
+hhs_full <- psrc_pums_count(ref_data1, group_vars="keep_existing", incl_na=FALSE) %>%              # Counts by full breakdown of CT categories
+  .[income!="Total" & workers!="Total", .(year, pph, workers, income, count, share)] %>% .[, year:=base.year]
 levels(hhs_full$income) <- c("Under $50,000", "$50,000-$74,999", "$75,000-$99,999", "$100,000 or more")
 hhs_full[, c("year", "pph", "workers"):=lapply(.SD, as.integer), .SDcols=c("year", "pph", "workers")]
 
@@ -95,6 +89,7 @@ for(i in 2:length(years)) {                                                     
 CTpph[, hhsize := NULL]
 
 rebalance()                                                                                        # Rebalance to handle any deviation from aggregate control
+
 
 # 2. Workers and Income brackets ------------------------------------
 
