@@ -1,12 +1,5 @@
-# Script for merging city-level control totals with regional CTs 
-# while distributing city-level totals between household sizes,
-# using Larry Blain's method.
-# Hana Sevcikova
-# Updated 02/14/2022
-
 library(data.table)
 library(RMySQL)
-library(openxlsx)
 
 # Users settings
 #########
@@ -14,9 +7,8 @@ library(openxlsx)
 setwd("~/psrc/R/urbansimRtools/control_totals")
 
 # Full name of the input file containing the unrolled control totals
-#CT.file <- '/Volumes/DataTeam/Projects/UrbanSim/NEW_DIRECTORY/Inputs/annual_control_totals/subregional_control_totals/controls_by_hhsize/unrolled_controls.csv'
-#CT.file <- 'unrolled_controls-2021-08-31.csv'
-CT.file <- '~/psrc/R/control-total-vision2050/Control-Totals-LUV3VisTol-2022-02-01.xlsx'
+CT.file <- '/Volumes/DataTeam/Projects/UrbanSim/NEW_DIRECTORY/Inputs/annual_control_totals/subregional_control_totals/controls_by_hhsize/unrolled_controls.csv'
+CT.file <- 'unrolled_controls-2021-08-31.csv'
 
 # baseyear DB
 base.db <- "2018_parcel_baseyear"
@@ -75,21 +67,18 @@ hhpop.control <- function(op.year, ref.year) {
 # Rebalance to match aggregated control totals
 # by sampling proportionally to HH count
 rebalance <- function() {
-    while(TRUE) {
-        aggr <- CTpop[, .(tot = sum(household_count)), by = .(city_id, year)]
-        aggr[CTs, should_be := i.total_hh, on = c("city_id", "year")]
-        aggr <- aggr[!is.na(should_be)]
-        aggr[, dif := should_be - tot]
-        difs <- aggr[abs(dif) > 0]
-        if(nrow(difs) == 0) break
-        for (i in 1:nrow(difs)) {
-            d <- difs[i, dif]
-            sct <- CTpop[city_id == difs[i, city_id] & year == difs[i, year]]
-            sampl <- sample(sct$pph, min(abs(d), sum(sct$household_count > 0)), prob = sct$household_count)
-            idx <- which(CTpop$city_id == difs[i, city_id] & CTpop$year == difs[i, year] & CTpop$pph %in% sampl)
-            CTpop[idx, household_count := household_count + sign(d)] # subtracts if d is negative, otherwise adds
-        }
-    }
+  aggr <- CTpop[, .(tot = sum(household_count)), by = .(city_id, year)]
+  aggr[CTs, should_be := i.total_hh, on = c("city_id", "year")]
+  aggr <- aggr[!is.na(should_be)]
+  aggr[, dif := should_be - tot]
+  difs <- aggr[abs(dif) > 0]
+  for (i in 1:nrow(difs)) {
+    d <- difs[i, dif]
+    sct <- CTpop[city_id == difs[i, city_id] & year == difs[i, year]]
+    sampl <- sample(sct$pph, abs(d), prob = sct$household_count)
+    idx <- which(CTpop$city_id == difs[i, city_id] & CTpop$year == difs[i, year] & CTpop$pph %in% sampl)
+    CTpop[idx, household_count := household_count + sign(d)] # subtracts if d is negative, otherwise adds
+  }
 }
 
 # use borrowed distribution for small geographies
@@ -116,9 +105,7 @@ set.count.by.borrowed.distr <- function(bdist, max.small = 800){
 # Start of processing
 #####################
 # read inputs
-#CTs <- fread(CT.file) # if csv file
-CTs <- data.table(read.xlsx(CT.file, sheet = "unrolled")) # if Excel sheet
-CTs[, year := as.integer(year)]
+CTs <- fread(CT.file)
 CTs <- CTs[year >= base.year]
 
 # create all combinations of cities, year and persons
@@ -128,26 +115,16 @@ CTpop <- data.table(expand.grid(city_id = cities, year = sort(unique(c(base.year
 # Read HHs joined on buildings and parcels from mysql (need parcels to get city_id) 
 mydb <- mysql.connection(base.db)
 
-# qr <- dbSendQuery(mydb, "select  t3.city_id, 
-# (case when t1.persons > 7 then 7 else t1.persons end) as pph, 
-# count(t1.household_id) as household_count from households as t1 
-# join buildings as t2 on t1.building_id=t2.building_id 
-# join parcels as t3 on t2.parcel_id=t3.parcel_id 
-# group by t3.city_id, (case when t1.persons > 7 then 7 else t1.persons end)")
-
-# temporary query using target_id
-qr <- dbSendQuery(mydb, "select  t3.target_id, 
+qr <- dbSendQuery(mydb, "select  t3.city_id, 
 (case when t1.persons > 7 then 7 else t1.persons end) as pph, 
 count(t1.household_id) as household_count from households as t1 
 join buildings as t2 on t1.building_id=t2.building_id 
 join parcels as t3 on t2.parcel_id=t3.parcel_id 
-group by t3.target_id, (case when t1.persons > 7 then 7 else t1.persons end)")
-
+group by t3.city_id, (case when t1.persons > 7 then 7 else t1.persons end)")
 hhs <- data.table(fetch(qr, n = -1))
 dbClearResult(qr)
 
 hhs[, year := base.year]
-setnames(hhs, "target_id", "city_id") # temporary
 
 # merge base year CTs with CTpop 
 CTpop[hhs, household_count := i.household_count, on = .(city_id, year, pph)]
@@ -155,9 +132,8 @@ CTpop[is.na(household_count), household_count := 1]
 
 CTpop[, hhsize := ifelse(pph < 3, "small", "large")]
 
-# Use borrowed distribution for small geographies
-#bdist <- fread("borrow_distribution.txt")
-bdist <- fread("borrow_distribution_2022Feb.txt")
+# Use borowed distribution for small geographies
+bdist <- fread("borrow_distribution.txt")
 set.count.by.borrowed.distr(bdist)
 
 # Iterate over years to run Larry Blains method
@@ -201,8 +177,8 @@ dbDisconnect(mydb)
 # write outputs into working DB
 if(store.outputs) {
   mydb <- mysql.connection(work.db)
-  dbWriteTable(mydb, "annual_household_control_totals", resCThh, overwrite = overwrite.existing, row.names = FALSE)
-  dbWriteTable(mydb, "annual_employment_control_totals", resCTjobs, overwrite = overwrite.existing, row.names = FALSE)
+  dbWriteTable(mydb, "annual_household_control_totals", resCThh, overwrite = overwrite.existing)
+  dbWriteTable(mydb, "annual_employment_control_totals", resCTjobs, overwrite = overwrite.existing)
   dbDisconnect(mydb)
 }
 

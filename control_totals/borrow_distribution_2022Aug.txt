@@ -1,0 +1,25 @@
+recipient_geo_id	donor_geo_id	recipient_geo_name	donor_geo_name
+48	1	Bellevue PAA	Bellevue
+57	19	Newcastle PAA	Newcastle
+95	41	Pacific (Pierce)	Pacific (King)
+175	153	Woodway MUGA	Woodway
+168	141	PAINE FIELD AREA	Mukilteo
+167	140	Mountlake Terrace MUGA	Mountlake Terrace 
+174	152	Sultan UGA	Sultan
+46	3	Auburn PAA	Auburn (King)
+49	29	Black Diamond PAA	Black Diamond
+51	7	Issaquah PAA	Issaquah
+157	144	Darrington UGA	Darrington
+147	145	Index	Gold Bar
+159	146	Granite Falls UGA	Granite Falls
+163	136	Maltby UGA	Marysville
+164	136	Marysville UGA	Marysville
+172	151	Stanwood UGA	Stanwood
+202	30	Carnation UGA	Carnation
+203	32	Covington PAA	Covington
+204	33	Duvall UGA	Duvall
+209	64	King no growth UGA Tukwila PAA	King Rural
+302	76	Kitsap Rural Ag & Resource	Kitsap Rural
+401	67	NBK - Bremerton	Bremerton UGA
+404	125	Naval Station Everett	Everrett
+43	44	Skykomish	Snoqualmie
