@@ -39,9 +39,8 @@ ct.geo.id <- "subreg_id"
 # names of existing regional control tables
 #reg.hh.ct.table <- "annual_household_control_totals"
 #reg.emp.ct.table <- "annual_employment_control_totals"
-reg.hh.ct.table <- "2018_parcel_baseyear_sandbox.annual_household_control_totals_jf_equiv_18by_ref18"
-#reg.emp.ct.table <- "psrc_2014_parcel_baseyear_just_friends.annual_employment_control_totals"
-reg.emp.ct.table <- "lum_sector_lodes_pmc.annual_employment_control_totals"
+reg.hh.ct.table <- "2018_parcel_baseyear_sandbox.annual_household_control_totals_jf_equiv_18by_ref18" # we need regional 2045
+reg.emp.ct.table <- "psrc_2014_parcel_baseyear_just_friends.annual_employment_control_totals_lum_sector"
 
 ###### End of users settings
 
