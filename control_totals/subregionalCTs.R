@@ -14,7 +14,8 @@ library(openxlsx)
 setwd("~/psrc/R/urbansimRtools/control_totals")
 
 # Full name of the input file containing the unrolled control totals
-CT.file <- '~/psrc/R/control-total-vision2050/Control-Totals-LUV3RebasedTrg-2022-08-01.xlsx'
+#CT.file <- '~/psrc/R/control-total-vision2050/Control-Totals-LUV3RebasedTrg-2022-08-01.xlsx'
+CT.file <- 'LUVit_ct_by_tod_generator_2022-10-05.xlsx'
 
 # baseyear DB
 base.db <- "2018_parcel_baseyear"

@@ -1,7 +1,7 @@
 ##################################################
 # Script for computing capacity for each parcel. 
 # It uses a set of proposals from an unlimited run.
-# Hana Sevcikova, PSRC, 2018-10-01
+# Hana Sevcikova, PSRC, 2022-09-26
 ##################################################
 
 library(data.table)
@@ -10,13 +10,13 @@ library(raster)
 ### Users settings
 ##################
 # Where is this script
-setwd('~/R/urbansimRtools/capacity') 
+setwd('~/psrc/R/urbansimRtools/capacity') 
 
 # save in csv file
 save <- TRUE
 
 # sampling share of residential projects on mix-use parcels
-res.ratio <- 75
+res.ratio <- 50
 
 # prefix of the output file name
 file.prefix <- paste0("CapacityPcl_res", res.ratio, "-", Sys.Date())
@@ -24,13 +24,15 @@ file.prefix <- paste0("CapacityPcl_res", res.ratio, "-", Sys.Date())
 # Where are csv tables with the full set of proposals and components 
 # (ideally from an unlimited urbansim run)
 #prop.path <- "J:/Projects/Parcel\ Data/Capacity/unlimited-run-142"
-prop.path <- "/Volumes/DataTeam/Projects/Parcel\ Data/Capacity/unlimited-run-142"
+#prop.path <- "/Volumes/DataTeam/Projects/Parcel\ Data/Capacity/unlimited-run-142"
+prop.path <- "~/n$/vision2050/opusgit/urbansim_data/data/psrc_parcel/runs/awsmodel01/run_71.run_2022_09_23_14_26/csv/2019"
 
 # Where are csv lookup tables 
 # (base year buildings & parcels, building_sqft_per_job,
 # development_constraints, development_templates & components)
 #lookup.path <- "J:/Projects/Parcel\ Data/Capacity/lookup-2018-10-01"
-lookup.path <- "/Volumes/DataTeam/Projects/Parcel\ Data/Capacity/lookup-2018-10-01"
+#lookup.path <- "/Volumes/DataTeam/Projects/Parcel\ Data/Capacity/lookup-2018-10-01"
+lookup.path <- "~/n$/vision2050/opusgit/urbansim_data/data/psrc_parcel/runs/awsmodel01/run_71.run_2022_09_23_14_26/csv/2018"
 
 rng.seed <- 1 # make it reproducible
 ####### End users settings
@@ -38,7 +40,7 @@ rng.seed <- 1 # make it reproducible
 set.seed(rng.seed) 
 
 # read and merge datasets
-bld14 <- fread(file.path(lookup.path, "buildings.csv"))
+bld.base <- fread(file.path(lookup.path, "buildings.csv"))
 props <- fread(file.path(prop.path, "development_project_proposals.csv"))
 props <- subset(props, status_id != 3) # do not include MPDs
 comp <- fread(file.path(prop.path, "development_project_proposal_components.csv"))
@@ -53,12 +55,12 @@ templc <- fread(file.path(lookup.path, "development_template_components.csv"))
 bsqft.per.job <- fread(file.path(lookup.path, "building_sqft_per_job.csv"))
 
 # impute missing sqft_per_unit and compute building_sqft in the base year buildings
-bld14[residential_units > 0 & building_type_id == 19 & sqft_per_unit == 0, sqft_per_unit := 1000]
-bld14[residential_units > 0 & building_type_id != 19 & sqft_per_unit == 0, sqft_per_unit := 500]
-bld14[ , building_sqft := residential_units * sqft_per_unit]
+bld.base[residential_units > 0 & building_type_id == 19 & sqft_per_unit == 0, sqft_per_unit := 1000]
+bld.base[residential_units > 0 & building_type_id != 19 & sqft_per_unit == 0, sqft_per_unit := 500]
+bld.base[ , building_sqft := residential_units * sqft_per_unit]
 
 # extract only columns that are needed
-bld <- bld14[, .(building_id, parcel_id, residential_units, non_residential_sqft, 
+bld <- bld.base[, .(building_id, parcel_id, residential_units, non_residential_sqft, 
                  building_sqft, job_capacity)]
 
 # adjust building_sqft if smaller than non_residential_sqft
@@ -212,6 +214,7 @@ all.pcls[, `:=`(DUcapacity = ifelse(is.na(residential_units_prop), DUbase,
                 )]
 respcl <- all.pcls[, .(parcel_id, DUbase, DUcapacity, NRSQFbase, NRSQFcapacity, 
                        JOBSPbase, JOBSPcapacity, BLSQFbase, BLSQFcapacity)]
+respcl <- merge(pcl[, .(parcel_id, subreg_id, tod_id)], respcl, by = "parcel_id")
 
 # output results
 if(save)

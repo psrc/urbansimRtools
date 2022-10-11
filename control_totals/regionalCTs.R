@@ -66,12 +66,14 @@ hhs_full <- psrc_pums_count(ref_data1, group_vars="keep_existing", incl_na=FALSE
 levels(hhs_full$income) <- c("Under $50,000", "$50,000-$74,999", "$75,000-$99,999", "$100,000 or more")
 hhs_full[, c("year", "pph", "workers"):=lapply(.SD, as.integer), .SDcols=c("year", "pph", "workers")]
 
-xlf <- paste0("J:/Projects/UrbanSim/NEW_DIRECTORY/Inputs/",
-              "annual_control_totals/controls_from_2017_macro_forecast/",
+xlf <- paste0(#"J:/Projects/UrbanSim/NEW_DIRECTORY/Inputs/",
+              #"annual_control_totals/controls_from_2017_macro_forecast/",
+              "~/psrc/control_totals/",
               "Working_Update_annual_hh_control_totals_2018_forecasts_2018_BY.xlsx")
 forecast <- data.table(read_excel(xlf, sheet="2018 REF Forecast Data",                             # Load household population and households from Macro forecast  
                                    range="G28:AM30", col_names=as.character(2018:2050))) %>% 
   .[c(1,3),] %>% data.table::transpose(keep.names="year") %>% setnames(c("V1", "V2"), c("hh_pop", "household_count"))
+forecast[, year := as.integer(year)]
 
 # 1. Households by size ---------------------------------------------
 
