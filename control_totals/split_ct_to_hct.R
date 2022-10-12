@@ -24,7 +24,7 @@ CT.file <- '~/psrc/R/control-total-vision2050/Control-Totals-LUV3RebasedTrg-2022
 capacity.file <- '~/psrc/R/urbansimRtools/capacity/CapacityPcl_res50-2022-09-26.csv'
     
 save.results <- FALSE      # should results be stored in an Excel file
-do.plot <- TRUE           # should plots be created
+do.plot <- FALSE           # should plots be created
 file.suffix <- "95-90-90" # suffix for file names (plots and Excel)
 
 geo.name <- "subreg_id"   # name of the geography column
@@ -175,6 +175,8 @@ CTgens <- list(HH = CTgen.hh, Emp = CTgen.emp, HHPop = CTgen.pop)
 
 
 CTdf <- checks <- todshare <- todshare.sub <- weights <- list()
+
+# iterate over indicators
 for(ind in names(targets)){
     cat("\n\nProcessing ", ind)
     cat("\n=====================")
@@ -186,7 +188,7 @@ for(ind in names(targets)){
         CTdf[[ind]][is_tod == TRUE, wtrg := pmax(trggrowth, 0) * target.share/100]
         CTdf[[ind]][CTdf[[ind]][is_tod == TRUE], wtrg := ifelse(is_tod == TRUE, i.wtrg, trggrowth - i.wtrg), on = "geo_id"][is.na(wtrg), wtrg := trggrowth]
     } else {
-        # aggregate tods where there is no target growth or no capacity
+        # aggregate TODs where there is no target growth or no HCT capacity
         if(ind == "HH")  # for jobs use HH geographies (HH must run first)
             aggr.geo <- CTdf[["HH"]][is_tod == TRUE & (trggrowth <= 500 | capshare == 0 | RGid > 3), geo_id]
         else { # check for employment that the filter still applies
@@ -200,7 +202,7 @@ for(ind in names(targets)){
         CTdfaggr[, trggrowth := geotottarget.orig - base20]
         CTdf[[ind]] <- rbind(CTdf[[ind]][!geo_id %in% CTdfaggr[, geo_id]], CTdfaggr, fill = TRUE)
 
-        # mark rows that do not have tod siblings
+        # mark rows that do not have TOD siblings
         CTdf[[ind]][, has_tod := TRUE]
         CTdf[[ind]][is_tod == FALSE & ! geo_id %in% CTdf[[ind]][is_tod == TRUE, geo_id], has_tod := FALSE]
         CTdf[[ind]][has_tod == FALSE, capshare := 100]
@@ -208,70 +210,100 @@ for(ind in names(targets)){
         # compute initial targets
         CTdf[[ind]][is_tod == TRUE, trg0 := pmin(netcap, trggrowth * capshare/100)]
         CTdf[[ind]][CTdf[[ind]][is_tod == TRUE], trg0 := ifelse(is_tod == TRUE, i.trg0, trggrowth - i.trg0), on = "geo_id"][is.na(trg0), trg0 := trggrowth] 
+        
+        # for non-HCT, if running over capacity, put the remainder into HCT 
         CTdf[[ind]][, overflow := 0]
         CTdf[[ind]][is_tod == FALSE & has_tod == TRUE & trg0 > netcap, `:=`(overflow = netcap - trg0, trg0 = netcap)]
         CTdf[[ind]][CTdf[[ind]][is_tod == FALSE & has_tod == TRUE], trg0 := ifelse(is_tod == TRUE, trg0 - i.overflow, trg0), on = "geo_id"]
         
+        # compute initial target shares
         CTdf[[ind]][, target.share := round(trg0/trggrowth * 100, 1)]
         
         # set step increments
         for(id in 1:3)
             CTdf[[ind]][RGid == id, incr := step[id]]
 
+        # some initialization
         CTdf[[ind]][, `:=`(wtrg = trg0, scale = 0)]
         
         # set minimum shares
         for(id in 1:3)
             CTdf[[ind]][RGid == id, minshare := min.share[[ind]][id]]
 
-        CTdf[[ind]][geonetcap < trggrowth, minshare := 0] # total target is larger than total capacity, growth only in tod
+        # total target is larger than total capacity, growth only in HCT
+        CTdf[[ind]][geonetcap < trggrowth, minshare := 0] 
+        # if HCT is already above the max share, keep it at that level
         CTdf[[ind]][is_tod == TRUE & (100 - capshare) < minshare,  minshare := round(pmin(minshare, 100 - capshare), 1)]
-    }   
+    } 
+    # compute regional HCT shares
     todshare[[ind]] <- CTdf[[ind]][is_tod == TRUE, sum(wtrg)]/CTdf[[ind]][, sum(wtrg, na.rm = TRUE)] * 100
     cat("\n\nStep 0:", todshare[[ind]])
 
+    # prepare for iterating
     counter <- 1
     df <- copy(CTdf[[ind]])
+    
+    # The weights object will keep the various values from each iteration. Used for plotting purposes only.
     weights[[ind]] <- NULL
     weights[[ind]] <- rbind(weights[[ind]], df[is_tod == TRUE, .(geo_id, RGid, name, todcap.share = NA, incr = NA, 
                                                                  scale = NA, target.share, iter = 0)])
     weights[[ind]] <- rbind(weights[[ind]], data.table(geo_id = 0, RGid = -1, name = "Total", todcap.share = NA, incr = NA, 
                                                        scale = NA, target.share = todshare[[ind]], iter = 0))
+    
+    # iterate to achieve the desired regional TOD share (for HHPop use the HH results)
     while(ind != "HHPop" && todshare[[ind]] < trgshare[[ind]]) {
+        # compute remaining capacity
         df[, remcap := pmax(0, netcap - wtrg)]
         df[is_tod == TRUE & abs(100 - target.share - minshare) <= 0.0001, remcap := 0]
+        # compute shares of remaining HCT capacity
         df[is_tod == TRUE, todcap.share := remcap/sum(remcap)]
+        # compute a scaling factor for the HCT shares
         df[is_tod == TRUE, scale := scale + incr * todcap.share]
+        # for HCT compute new targets without going over capacity
         df[is_tod == TRUE, wtrg := pmin(netcap, trggrowth * pmin(1-minshare/100, (1+scale) * capshare/100))]
+        # compute targets for non-HCT via a subtraction
         df[df[is_tod == TRUE], wtrg := ifelse(is_tod == TRUE, i.wtrg, trggrowth - i.wtrg), on = "geo_id"][is.na(wtrg), wtrg := trggrowth]
+        # if non-HCT capacity is exceeded, add the remainder to HCT
         df[, overflow := 0]
         df[is_tod == FALSE & has_tod == TRUE & wtrg > netcap, `:=`(overflow = netcap - wtrg, wtrg = netcap)]
         df[df[is_tod == FALSE & has_tod == TRUE], wtrg := ifelse(is_tod == TRUE, wtrg - i.overflow, wtrg), on = "geo_id"]
+        # update regional HCT shares
         todshare.old <- todshare[[ind]]
         todshare[[ind]] <- df[is_tod == TRUE, sum(wtrg)]/df[, sum(wtrg, na.rm = TRUE)] * 100
+        # update HCT shares for each geography
         df[, target.share := round(wtrg/trggrowth * 100, 1)]
+        # add data to the weights object
         weights[[ind]] <- rbind(weights[[ind]], df[is_tod == TRUE, .(geo_id, RGid, name, todcap.share = todcap.share * 100, incr, 
                                                                      scale = scale * 100, target.share, iter = counter)])
         weights[[ind]] <- rbind(weights[[ind]], data.table(geo_id = 0, RGid = -1, name = "Total", todcap.share = NA, incr = NA, 
                                                            scale = NA, target.share = todshare[[ind]], iter = counter))
         cat("\nStep ", counter, ":", todshare[[ind]])
         counter <- counter + 1
+        # if desired regional HCT share achieved get out of the loop
         if(abs(todshare.old - todshare[[ind]]) <= 0.0001) break
     }
-    todshare.sub[[ind]] <- df[is_tod == TRUE, sum(wtrg)]/df[has_tod == TRUE | geo_id %in% aggr.geo, sum(wtrg, na.rm = TRUE)] * 100
-    df[, tottrg.final := base20 + wtrg]
+    # compute regional HCT shares while excluding non-HCT jurisdictions 
+    todshare.sub[[ind]] <- df[is_tod == TRUE, sum(wtrg)]/df[has_tod == TRUE | (geo_id %in% aggr.geo & RGid <= 3), 
+                                                                               sum(wtrg, na.rm = TRUE)] * 100
+    # some post-processing
+    df[, tottrg.final := base20 + wtrg] # total 2050 value
     df[has_tod == FALSE, target.share := 100]
+    # for checking purposes if jurisdictional targets are the same
     df[, geotottarget.final := sum(tottrg.final), by = "geo_id"][, trgdif := geotottarget.final - geotottarget.orig]
+    # sort rows
     df <- df[order(geo_id, -is_tod)]
+    # assign new ids
     df[, control_id := geo_id]
     df[is_tod == TRUE, control_id := control_id + 1000]
+    # compute HCT shares for each TOD 
     todshare.bytod <- df[is_tod == TRUE, sum(wtrg), by = "RGid"]
     todshare.bytod[df[, sum(wtrg, na.rm = TRUE), by = "RGid"][RGid %in% 1:3], share := V1/i.V1 * 100, on = "RGid"]
+    # keep results
     checks[[ind]] <- copy(todshare.bytod)
     CTdf[[ind]] <- copy(df)
 }
 
-
+# assemble results
 hhres <- CTdf[["HH"]][, .(subreg_id = control_id, geo_id, RGid, name, is_tod = as.integer(is_tod), DUtotcapacity = round(totcap),
                   DUnetcapacity = round(netcap), DUcapshare = round(capshare, 1), target_share = round(target.share, 1),
               target_growth_ini = round(trg0), target_growth_final = round(wtrg), HH2018 = base18, HH2020 = base20, HH2050 = round(tottrg.final))]
@@ -299,7 +331,7 @@ check <- rbind(check, data.table(RGid = -1, tod_share_hh = round(todshare[["HH"]
 check[, RGid := as.character(RGid)][RGid == "-2", RGid := "Tot within RG"]
 check[, RGid := as.character(RGid)][RGid == "-1", RGid := "Total"]
 
-
+# interpolate results and create unrolled CTs
 source("interpolate.R")
 
 to.interpolate <- list(HHPop = popres, HH = hhres, Emp = empres)
@@ -315,13 +347,13 @@ for (indicator in names(to.interpolate)) {
 }
 CTs[["unrolled"]] <- unrolled
 
+# save results into an Excel file
 if(save.results)
     write.xlsx(CTs, file = paste0("LUVit_ct_by_tod_generator_", file.suffix, "_", Sys.Date(), ".xlsx"))
 
-RGdf <- data.table(RGid = c(1:3, -1), RG = c("Metro", "Core Cities", "HCT Comm", "Region"))
-
-
+# generate plots
 if(do.plot){
+    RGdf <- data.table(RGid = c(1:3, -1), RG = c("Metro", "Core Cities", "HCT Comm", "Region"))
     for(ind in c("HH", "Emp")){
         dat <- copy(weights[[ind]][RGid <= 3])
         
@@ -340,9 +372,7 @@ if(do.plot){
                                                                                col = factor(geo_id), hjust = 0, vjust = 1.5), size = 3) + theme(legend.position="none")
         
         pdf(paste0("target_shares_evol_", ind, "_", file.suffix, "_", Sys.Date(), ".pdf"), width = 8, height = 9)
-        #dev.new()
         print(g)
-        #dev.new()
         print(g2)
         dev.off()
     }
