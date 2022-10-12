@@ -1,3 +1,12 @@
+# Script for splitting jurisdictional control totals into 
+# HCT and non-HCT parts. 
+# Starting from HCT and non-HCT capacity shares for each city,
+# the method iteratively increases those shares until the desired 
+# regional shares are achieved.
+#
+# 2022/10/12
+# Hana Sevcikova, PSRC
+
 library(data.table)
 library(openxlsx)
 library(RMySQL)
@@ -8,32 +17,32 @@ setwd("~/psrc/R/urbansimRtools/control_totals")
 # Full name of the input file containing the control totals (not unrolled)
 CT.file <- '~/psrc/R/control-total-vision2050/Control-Totals-LUV3RebasedTrg-2022-08-01.xlsx'
 
-# temp file for reading in various inputs
-CTg.file <- '~/psrc/control_totals/LUV3_control_generator_20220928_non_decreasing.xlsx'
+# temp file for reading in various inputs (not needed anymore)
+# CTg.file <- '~/psrc/control_totals/LUV3_control_generator_20220928_non_decreasing.xlsx'
 
 # parcel-level capacity file
 capacity.file <- '~/psrc/R/urbansimRtools/capacity/CapacityPcl_res50-2022-09-26.csv'
     
-save.results <- TRUE
-do.plot <- TRUE
-file.suffix <- "95-90-90"
+save.results <- FALSE      # should results be stored in an Excel file
+do.plot <- TRUE           # should plots be created
+file.suffix <- "95-90-90" # suffix for file names (plots and Excel)
 
-geo.name <- "subreg_id"
+geo.name <- "subreg_id"   # name of the geography column
 
-trgshare <- list(HH = 64.5, Emp = 75, HHPop = 65)
-#trgshare <- list(HH = 62, Emp = 75, HHPop = 65)
-min.share <- list(HH = 10, Emp = 10, HHPop = 10)
-empminshares <- c(5, 10, 10) # overrides min.share for employment; defined by RG
-#empminshares <- c()
-resminshares <- c(5, 10, 10) # overrides min.share for HH; defined by RG
+trgshare <- list(HH = 64.5, Emp = 75, HHPop = NA) # Regional shares to achieve
+min.share <- list(HH = c(10, 10, 10), Emp = c(10, 10, 10), HHPop = NA)  # minimum growth shares in non-HCT areas (for RGs 1, 2, 3)
+#min.share <- list(HH = c(5, 10, 10), Emp = c(5, 10, 10), HHPop = NA)
 
-step <- c(1, 0.5, 0.25) # steps of scaling increase by RG 
+step <- c(1, 0.5, 0.25) # steps of scaling increase for RGs 1, 2, 3
 
-use.mysql <- FALSE # if FALSE, base data are taken from base.data.file
-base.db <- "2018_parcel_baseyear"
+use.mysql <- FALSE # if FALSE, base data are taken from base.data.file. 
+                   # Set this to TRUE if run for the first time or if there is change in the DB.
+base.db <- "2018_parcel_baseyear" # used if use.mysql is TRUE
 
-save.base.data <- FALSE
-base.data.file <- "base_data_shares.rda"
+save.base.data <- FALSE # should the base data pulled from mysql be saved. 
+                        # Set this to TRUE if use.mysql is TRUE. It allows to 
+                        # skip the mysql step next time around. 
+base.data.file <- "base_data_shares.rda" # where to store or load from the base data
 
 ## Functions
 ###############
@@ -179,7 +188,12 @@ for(ind in names(targets)){
     } else {
         # aggregate tods where there is no target growth or no capacity
         if(ind == "HH")  # for jobs use HH geographies (HH must run first)
-            aggr.geo <- CTdf[["HH"]][is_tod == TRUE & (trggrowth <= 500 | capshare == 0 | RGid > 3), geo_id]  
+            aggr.geo <- CTdf[["HH"]][is_tod == TRUE & (trggrowth <= 500 | capshare == 0 | RGid > 3), geo_id]
+        else { # check for employment that the filter still applies
+            no.pass <- CTdf[[ind]][geo_id %in% aggr.geo & is_tod == TRUE & (trggrowth > 500 & capshare > 0 & RGid <= 3), geo_id]
+            if(length(no.pass) > 0)
+                warning("Locations to aggregate ", paste(no.pass, collapse = ", "), " didn't pass the aggregation filter for employment.")
+        }
         CTdfaggr <- CTdf[[ind]][geo_id %in% aggr.geo, .(base18 = sum(base18), base20 = sum(base20), is_tod = FALSE, totcap = sum(totcap), netcap = sum(netcap), capshare = 100,
                                geonetcap = mean(geonetcap), geotottarget.orig = mean(geotottarget.orig), has_tod = FALSE), 
                            by = c("geo_id", "RGid", "name")]
@@ -204,15 +218,12 @@ for(ind in names(targets)){
         for(id in 1:3)
             CTdf[[ind]][RGid == id, incr := step[id]]
 
-        CTdf[[ind]][, `:=`(wtrg = trg0, scale = 0, minshare = min.share[[ind]])]
-        if(ind == "Emp" && !is.null(empminshares)){
-            for(id in 1:3)
-                CTdf[[ind]][RGid == id, minshare := empminshares[id]]
-        }
-        if(ind == "HH" && !is.null(resminshares)){
-            for(id in 1:3)
-                CTdf[[ind]][RGid == id, minshare := resminshares[id]]
-        }
+        CTdf[[ind]][, `:=`(wtrg = trg0, scale = 0)]
+        
+        # set minimum shares
+        for(id in 1:3)
+            CTdf[[ind]][RGid == id, minshare := min.share[[ind]][id]]
+
         CTdf[[ind]][geonetcap < trggrowth, minshare := 0] # total target is larger than total capacity, growth only in tod
         CTdf[[ind]][is_tod == TRUE & (100 - capshare) < minshare,  minshare := round(pmin(minshare, 100 - capshare), 1)]
     }   
