@@ -1,15 +1,16 @@
+##################################################
 # Script for splitting jurisdictional control totals into 
 # HCT and non-HCT parts. 
 # Starting from HCT and non-HCT capacity shares for each city,
 # the method iteratively increases those shares until the desired 
 # regional shares are achieved.
-#
-# 2022/10/12
-# Hana Sevcikova, PSRC
+# Hana Sevcikova, PSRC, 2022/10/12
+##################################################
 
 library(data.table)
 library(openxlsx)
 library(RMySQL)
+library(ggplot2)
 
 # working directory
 setwd("~/psrc/R/urbansimRtools/control_totals")
@@ -21,25 +22,26 @@ CT.file <- '~/psrc/R/control-total-vision2050/Control-Totals-LUV3RebasedTrg-2022
 # CTg.file <- '~/psrc/control_totals/LUV3_control_generator_20220928_non_decreasing.xlsx'
 
 # parcel-level capacity file
-capacity.file <- '~/psrc/R/urbansimRtools/capacity/CapacityPcl_res50-2022-09-26.csv'
+capacity.file <- '~/psrc/R/urbansimRtools/capacity/CapacityPcl_res50-2022-10-12.csv'
     
-save.results <- FALSE      # should results be stored in an Excel file
-do.plot <- FALSE           # should plots be created
-file.suffix <- "95-90-90" # suffix for file names (plots and Excel)
+save.results <- TRUE      # should results be stored in an Excel file
+do.plot <- TRUE           # should plots be created
 
 geo.name <- "subreg_id"   # name of the geography column
 
 trgshare <- list(HH = 64.5, Emp = 75, HHPop = NA) # Regional shares to achieve
-min.share <- list(HH = c(10, 10, 10), Emp = c(10, 10, 10), HHPop = NA)  # minimum growth shares in non-HCT areas (for RGs 1, 2, 3)
-#min.share <- list(HH = c(5, 10, 10), Emp = c(5, 10, 10), HHPop = NA)
+#min.share <- list(HH = c(10, 10, 10), Emp = c(10, 10, 10), HHPop = NA)  # minimum growth shares in non-HCT areas (for RGs 1, 2, 3)
+min.share <- list(HH = c(5, 10, 10), Emp = c(5, 10, 10), HHPop = NA)
+
+file.suffix <- paste(100-min.share[["HH"]], collapse = "-") # suffix for file names (plots and Excel)
 
 step <- c(1, 0.5, 0.25) # steps of scaling increase for RGs 1, 2, 3
 
-use.mysql <- FALSE # if FALSE, base data are taken from base.data.file. 
+use.mysql <- TRUE # if FALSE, base data are taken from base.data.file. 
                    # Set this to TRUE if run for the first time or if there is change in the DB.
 base.db <- "2018_parcel_baseyear" # used if use.mysql is TRUE
 
-save.base.data <- FALSE # should the base data pulled from mysql be saved. 
+save.base.data <- TRUE # should the base data pulled from mysql be saved. 
                         # Set this to TRUE if use.mysql is TRUE. It allows to 
                         # skip the mysql step next time around. 
 base.data.file <- "base_data_shares.rda" # where to store or load from the base data
