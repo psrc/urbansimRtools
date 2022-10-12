@@ -30,8 +30,8 @@ do.plot <- TRUE           # should plots be created
 geo.name <- "subreg_id"   # name of the geography column
 
 trgshare <- list(HH = 64.5, Emp = 75, HHPop = NA) # Regional shares to achieve
-#min.share <- list(HH = c(10, 10, 10), Emp = c(10, 10, 10), HHPop = NA)  # minimum growth shares in non-HCT areas (for RGs 1, 2, 3)
-min.share <- list(HH = c(5, 10, 10), Emp = c(5, 10, 10), HHPop = NA)
+min.share <- list(HH = c(10, 10, 10), Emp = c(10, 10, 10), HHPop = NA)  # minimum growth shares in non-HCT areas (for RGs 1, 2, 3)
+#min.share <- list(HH = c(5, 10, 10), Emp = c(5, 10, 10), HHPop = NA)
 
 file.suffix <- paste(100-min.share[["HH"]], collapse = "-") # suffix for file names (plots and Excel)
 
@@ -185,25 +185,31 @@ for(ind in names(targets)){
     targets[[ind]][, trggrowth := trg50 - base20]
     CTdf[[ind]] <- merge(CTgens[[ind]], targets[[ind]][, .(geo_id, trggrowth, geotottarget.orig = trg50)], by = "geo_id")
 
+    # aggregate TODs where there is no target growth or no HCT capacity
+    if(ind == "HH")  # for jobs use HH geographies (HH must run first)
+        aggr.geo <- CTdf[["HH"]][is_tod == TRUE & (trggrowth <= 500 | capshare == 0 | RGid > 3), geo_id]
+    else { # check for employment that the filter still applies
+        if(ind == "Emp"){
+            no.pass <- CTdf[[ind]][geo_id %in% aggr.geo & is_tod == TRUE & (trggrowth > 500 & capshare > 0 & RGid <= 3), geo_id]
+            if(length(no.pass) > 0)
+                warning("Locations to aggregate ", paste(no.pass, collapse = ", "), " didn't pass the aggregation filter for employment.")
+        }
+    }
+    if(ind != "HHPop")
+        CTdfaggr <- CTdf[[ind]][geo_id %in% aggr.geo, .(base18 = sum(base18), base20 = sum(base20), is_tod = FALSE, totcap = sum(totcap), netcap = sum(netcap), capshare = 100,
+                                                    geonetcap = mean(geonetcap), geotottarget.orig = mean(geotottarget.orig), has_tod = FALSE), 
+                            by = c("geo_id", "RGid", "name")]
+    else CTdfaggr <- CTdf[[ind]][geo_id %in% aggr.geo, .(base18 = sum(base18), base20 = sum(base20), is_tod = FALSE, 
+                                                         geotottarget.orig = mean(geotottarget.orig)), 
+                                 by = c("geo_id", "RGid", "name")]
+    CTdfaggr[, trggrowth := geotottarget.orig - base20]
+    CTdf[[ind]] <- rbind(CTdf[[ind]][!geo_id %in% CTdfaggr[, geo_id]], CTdfaggr, fill = TRUE)
+    
     if(ind == "HHPop") {
         CTdf[[ind]] <- merge(CTdf[[ind]], CTdf[["HH"]][, .(geo_id, is_tod, has_tod, target.share)], by = c("geo_id", "is_tod"))
         CTdf[[ind]][is_tod == TRUE, wtrg := pmax(trggrowth, 0) * target.share/100]
         CTdf[[ind]][CTdf[[ind]][is_tod == TRUE], wtrg := ifelse(is_tod == TRUE, i.wtrg, trggrowth - i.wtrg), on = "geo_id"][is.na(wtrg), wtrg := trggrowth]
     } else {
-        # aggregate TODs where there is no target growth or no HCT capacity
-        if(ind == "HH")  # for jobs use HH geographies (HH must run first)
-            aggr.geo <- CTdf[["HH"]][is_tod == TRUE & (trggrowth <= 500 | capshare == 0 | RGid > 3), geo_id]
-        else { # check for employment that the filter still applies
-            no.pass <- CTdf[[ind]][geo_id %in% aggr.geo & is_tod == TRUE & (trggrowth > 500 & capshare > 0 & RGid <= 3), geo_id]
-            if(length(no.pass) > 0)
-                warning("Locations to aggregate ", paste(no.pass, collapse = ", "), " didn't pass the aggregation filter for employment.")
-        }
-        CTdfaggr <- CTdf[[ind]][geo_id %in% aggr.geo, .(base18 = sum(base18), base20 = sum(base20), is_tod = FALSE, totcap = sum(totcap), netcap = sum(netcap), capshare = 100,
-                               geonetcap = mean(geonetcap), geotottarget.orig = mean(geotottarget.orig), has_tod = FALSE), 
-                           by = c("geo_id", "RGid", "name")]
-        CTdfaggr[, trggrowth := geotottarget.orig - base20]
-        CTdf[[ind]] <- rbind(CTdf[[ind]][!geo_id %in% CTdfaggr[, geo_id]], CTdfaggr, fill = TRUE)
-
         # mark rows that do not have TOD siblings
         CTdf[[ind]][, has_tod := TRUE]
         CTdf[[ind]][is_tod == FALSE & ! geo_id %in% CTdf[[ind]][is_tod == TRUE, geo_id], has_tod := FALSE]
