@@ -125,7 +125,7 @@ forecast[, year := as.integer(year)]
 
 CTpph <- data.table(expand.grid(year = sort(unique(forecast$year)), pph = 1:7))                    # create all combinations of year and pph
 
-CTpph[hhs, household_count := i.count, on = .(year, pph)]                                          # merge base year hh counts with CTpph 
+CTpph[hhs_full, household_count := i.count, on = .(year, pph)]                                     # merge base year hh counts with CTpph 
 CTpph[is.na(household_count), household_count := 1]
 CTpph[, hhsize := ifelse(pph < 3, "small", "large")]
 
@@ -141,13 +141,13 @@ rebalance()                                                                     
 
 # 2. Workers and Income brackets ------------------------------------
 
-setkeyv(CTpph, c("year", "pph"))                                                                   # Keys for easier joining
-setkeyv(hhs_full, c("pph", "workers", "income"))
+CTpph %<>% setkeyv(c("year", "pph"))                                                               # Keys for easier joining
+hhs_full %<>% setkeyv(c("pph", "workers", "income"))
 
 CTpop <- data.table(expand.grid(year = sort(unique(forecast$year)),                                # Create all combinations of year, pph, worker & income
                                 pph = 1:7,
                                 workers = 0:4,
-                                income = levels(hhs_full$income))) %>%
+                                income = unique(hhs_full$income))) %>%
   .[pph>=workers] %>%                                                                              # Remove nonsense combinations
   setkeyv(c("pph", "workers", "income"))
 
