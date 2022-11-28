@@ -22,18 +22,18 @@ setwd("~/psrc/R/urbansimRtools/control_totals")
 
 # Full name of the input file containing the control totals (sheets with not unrolled CTs)
 # This is the output of run_creating_control_totals_from_targets.R from the link above
-CT.file <- '~/psrc/R/control-total-vision2050/Control-Totals-LUVit-2022-11-08.xlsx'
+CT.file <- '~/psrc/R/control-total-vision2050/Control-Totals-LUVit-2022-11-15.xlsx'
 
 # parcel-level capacity file
 # generated via https://github.com/psrc/urbansimRtools/blob/master/capacity/parcels_capacity.R
 capacity.file <- '~/psrc/R/urbansimRtools/capacity/CapacityPcl_res50-2022-10-12.csv'
     
 save.results <- TRUE      # should results be stored in an Excel file
-do.plot <- FALSE           # should plots be created
+do.plot <- TRUE           # should plots be created
 
 geo.name <- "subreg_id"   # name of the geography column in the parcel file
 
-trgshare <- list(HH = 64.5, Emp = 75, HHPop = NA) # Regional shares to achieve (HHPop is derived from HH and it is usually a little higher)
+trgshare <- list(HH = 65, Emp = 75, HHPop = NA) # Regional shares to achieve (HHPop is derived from HH and it is usually a little higher)
 
 # Scenarios are defined as the minimum growth shares in non-HCT areas (for RGs 1, 2, 3)
 # E.g. c(10, 10, 10) means the growth into HCT areas cannot be more than 90% 
@@ -86,7 +86,8 @@ setnames(ct.pop, "control_id", "geo_id")
 targets <- list(HH = ct.hh[, .(geo_id, base20 = `2020`, trg50 = round(`2050`))], # order of the list items is important (HH must be first)
                 Emp = ct.emp[, .(geo_id, base20 = `2020`, trg50 = round(`2050`))],
                 HHPop = ct.pop[, .(geo_id, base20 = `2020`, trg50 = `2050`)])
-
+targets[["HH"]][ , `:=`(trg.pph = targets[["HHPop"]][ , (trg50-base20)]/(trg50-base20), trg.pop = targets[["HHPop"]][ , trg50] - targets[["HHPop"]][ , base20])]
+targets[["HH"]][is.na(trg.pph), trg.pph := 0]
 
 # read capacity file
 pcl.cap <- fread(capacity.file)
@@ -102,29 +103,36 @@ geo.cap <- pcl.cap[, lapply(.SD, sum), by = c("geo_id", "is_tod"), .SDcols = SDc
 # read 2018 HH, HHPop and jobs data from the DB
 if(use.mysql) {
     mydb <- mysql.connection(base.db)
-    qr <- dbSendQuery(mydb, paste0("select  t3.subreg_id, t3.tod_id > 0 as is_tod, count(t1.household_id) as households, sum(persons) as persons from households as t1",
+    qr <- dbSendQuery(mydb, paste0("select  t3.control_id, t3.tod_id > 0 as is_tod, count(t1.household_id) as households, sum(persons) as persons from households as t1",
                                " join buildings as t2 on t1.building_id=t2.building_id join ", base.db, 
-                               ".parcels as t3 on t2.parcel_id=t3.parcel_id group by t3.", geo.name, ", is_tod"
+                               ".parcels as t3 on t2.parcel_id=t3.parcel_id group by t3.control_id, is_tod"
                                 ))
     hh_base <- data.table(fetch(qr, n = -1))
     dbClearResult(qr)
-    setnames(hh_base, geo.name, "geo_id")
+    setnames(hh_base, "control_id", "geo_id")
 
-    qr <- dbSendQuery(mydb, paste0("select  t3.subreg_id, t3.tod_id > 0 as is_tod, count(t1.job_id) as jobs from jobs as t1",
+    qr <- dbSendQuery(mydb, paste0("select  t3.control_id, t3.tod_id > 0 as is_tod, count(t1.job_id) as jobs from jobs as t1",
                                " join buildings as t2 on t1.building_id=t2.building_id join ", base.db, 
-                               ".parcels as t3 on t2.parcel_id=t3.parcel_id group by t3.", geo.name, ", is_tod"
+                               ".parcels as t3 on t2.parcel_id=t3.parcel_id group by t3.control_id, is_tod"
                     ))
     job_base <- data.table(fetch(qr, n = -1))
-    setnames(job_base, geo.name, "geo_id")
+    setnames(job_base, "control_id", "geo_id")
     dbClearResult(qr)
 
     base.data <- merge(hh_base, job_base, by = c("geo_id", "is_tod"), all = TRUE)
 
-    qr <- dbSendQuery(mydb, "select * from subregs")
-    geos <- data.table(fetch(qr, n = -1))
+    qr <- dbSendQuery(mydb, "select * from controls")
+    geos <- unique(data.table(fetch(qr, n = -1)))
     dbClearResult(qr)
-    setnames(geos, c("subreg_id", "subreg_name", "rgs_id"), c("geo_id", "name", "RGid"))
+    setnames(geos, c("control_id", "control_name"), c("geo_id", "name"))
 
+    qr <- dbSendQuery(mydb, "select * from subregs")
+    geos2 <- data.table(fetch(qr, n = -1))[subreg_id %in% geos[, geo_id]]
+    dbClearResult(qr)
+    setnames(geos2, c("subreg_id", "rgs_id"), c("geo_id", "RGid"))
+    
+    geos <- merge(geos, geos2[, subreg_name := NULL])
+    
     base.data <- merge(geos, base.data, by = "geo_id", all = TRUE)
     base.data[is.na(is_tod), is_tod := FALSE]
     for(col in c("households", "persons", "jobs"))
@@ -149,9 +157,13 @@ base.data <- merge(base.data, ct.emp[, .(geo_id, base20emptot = `2020`)], by = "
 base.data[, empbase20 := round(base20emptot * job_share)]
 
 # separate HH, HHPop and jobs into three tables 
-CTgen.hh <- base.data[, .(geo_id, is_tod, RGid, name, base18 = households, base20 = hhbase20)]
+CTgen.hh <- base.data[, .(geo_id, is_tod, RGid, name, base18 = households, base20 = hhbase20, 
+                          pph20 = popbase20/hhbase20, geopph20 = base20poptot/base20hhtot)][, pph.ratio := pph20/geopph20]
+CTgen.hh[is_tod == TRUE, pph.ratio := pmin(pph.ratio, 0.9999)]
+CTgen.hh[is_tod == FALSE, pph.ratio := pmax(pph.ratio, 1-0.9999)]
 CTgen.emp <- base.data[, .(geo_id, is_tod, RGid, name, base18 = jobs, base20 = empbase20)]
 CTgen.pop <- base.data[, .(geo_id, is_tod, RGid, name, base18 = persons, base20 = popbase20)]
+
 
 # merge with capacity and compute net capacity in 2020 as well as HCT capacity shares
 merge.with.capacity <- function(df, cap.df, what){
@@ -185,7 +197,10 @@ for(min.share in scenarios) { #  iterate over scenarios of growth limits
         
         # merge it with the HCT-split jurisdictions
         CTdf[[ind]] <- merge(CTgens[[ind]], targets[[ind]][, .(geo_id, trggrowth, geotottarget.orig = trg50)], by = "geo_id")
-        
+        if(ind == "HH") {
+            CTdf[[ind]] <- merge(CTdf[[ind]], targets[[ind]][, .(geo_id, geotrg.pph = trg.pph, geotrg.pop = trg.pop)], by = "geo_id")
+            CTdf[[ind]][, trg.pph := pph.ratio * geotrg.pph][, wtrg.pph := trg.pph]
+        }
         # Aggregate split jurisdictions where there is no target growth (i.e. less than 500), 
         # no HCT capacity or RGid is not 1,2,3
         if(ind == "HH")  # for jobs use HH geographies (HH must run first), so that we have identical geographies for HH and jobs
@@ -206,6 +221,12 @@ for(min.share in scenarios) { #  iterate over scenarios of growth limits
         else CTdfaggr <- CTdf[[ind]][geo_id %in% aggr.geo, .(base18 = sum(base18), base20 = sum(base20), is_tod = FALSE, 
                                                              geotottarget.orig = mean(geotottarget.orig)), 
                                      by = c("geo_id", "RGid", "name")]
+        if(ind == "HH")
+            CTdfaggr <- merge(CTdfaggr, CTdf[[ind]][geo_id %in% aggr.geo, .(pph20 = mean(geopph20), geopph20 = mean(geopph20), 
+                                                                            pph.ratio = 1, geotrg.pph = mean(geotrg.pph),
+                                                                            geotrg.pop = mean(geotrg.pop), trg.pph = mean(geotrg.pph),
+                                                                            wtrg.pph = mean(geotrg.pph), is_tod = FALSE), 
+                                                    by = c("geo_id", "RGid", "name")], by = c("geo_id", "is_tod", "RGid", "name"))
         CTdfaggr[, trggrowth := geotottarget.orig - base20]
         
         # Keep just one entry for each aggregated geography
@@ -213,8 +234,9 @@ for(min.share in scenarios) { #  iterate over scenarios of growth limits
         
         if(ind == "HHPop") {
             # For HHPop use the same target shares as for HH (thus, HH must run first)
-            CTdf[[ind]] <- merge(CTdf[[ind]], CTdf[["HH"]][, .(geo_id, is_tod, has_tod, target.share)], by = c("geo_id", "is_tod"))
-            CTdf[[ind]][is_tod == TRUE, wtrg := pmax(trggrowth, 0) * target.share/100]
+            CTdf[[ind]] <- merge(CTdf[[ind]], CTdf[["HH"]][, .(geo_id, is_tod, has_tod, target.share, pop = wtrg * wtrg.pph)], by = c("geo_id", "is_tod"))
+            #CTdf[[ind]][is_tod == TRUE, wtrg := pmax(trggrowth, 0) * target.share/100]
+            CTdf[[ind]][is_tod == TRUE, wtrg := pop]
             CTdf[[ind]][CTdf[[ind]][is_tod == TRUE], wtrg := ifelse(is_tod == TRUE, i.wtrg, trggrowth - i.wtrg), on = "geo_id"][is.na(wtrg), wtrg := trggrowth]
         } else {
             # mark rows that do not have TOD siblings
@@ -253,7 +275,22 @@ for(min.share in scenarios) { #  iterate over scenarios of growth limits
             CTdf[[ind]][is_tod == TRUE & (100 - capshare) < minshare,  minshare := round(pmin(minshare, 100 - capshare), 1)]
         } 
         # compute regional HCT shares
-        todshare[[ind]] <- CTdf[[ind]][is_tod == TRUE, sum(wtrg)]/CTdf[[ind]][, sum(wtrg, na.rm = TRUE)] * 100
+        if(ind == "HH") {
+            # adjust pph
+            #CTdf[[ind]][, max.wtrg.pph := wtrg.pph + 0.5]
+            CTdf[[ind]][, max.wtrg.pph := geotrg.pph + 0.5]
+            while(TRUE) {
+                CTdf[[ind]][, wtrg.pop := wtrg * pmax(1.2, wtrg.pph)]#[is.na(wtrg.pop), wtrg.pop := 0]
+                CTdf[[ind]][has_tod == FALSE, wtrg.pop := geotrg.pop]
+                CTdf[[ind]][CTdf[[ind]][is_tod == TRUE], wtrg.pop := ifelse(is_tod == TRUE, wtrg.pop, geotrg.pop - i.wtrg.pop), on = "geo_id"][is.na(wtrg.pop), wtrg.pop := geotrg.pop]
+                CTdf[[ind]][, wtrg.pph := wtrg.pop / wtrg]
+                if(all(CTdf[[ind]][is_tod == FALSE & has_tod == TRUE, wtrg.pph <= max.wtrg.pph] )) break
+                CTdf[[ind]][is_tod == TRUE & geo_id %in% CTdf[[ind]][is_tod == FALSE & has_tod == TRUE & wtrg.pph > max.wtrg.pph, geo_id], wtrg.pph := wtrg.pph * 1.01]
+            }
+            todshare[[ind]] <- CTdf[[ind]][is_tod == TRUE, sum(wtrg * wtrg.pph)] / CTdf[[ind]][, sum(wtrg * wtrg.pph, na.rm = TRUE)] * 100
+            
+        } else 
+            todshare[[ind]] <- CTdf[[ind]][is_tod == TRUE, sum(wtrg)]/CTdf[[ind]][, sum(wtrg, na.rm = TRUE)] * 100
         cat("\n\nStep 0:", todshare[[ind]])
         
         # prepare for iterating
@@ -292,7 +329,23 @@ for(min.share in scenarios) { #  iterate over scenarios of growth limits
             
             # update regional HCT shares
             todshare.old <- todshare[[ind]]
-            todshare[[ind]] <- df[is_tod == TRUE, sum(wtrg)]/df[, sum(wtrg, na.rm = TRUE)] * 100
+            if(ind == "HH") {
+                # adjust pph
+                while(TRUE) {
+                    df[, wtrg.pop := wtrg * pmax(1.2, wtrg.pph)]#[is.na(wtrg.pop), wtrg.pop := 0]
+                    df[has_tod == FALSE, wtrg.pop := geotrg.pop]
+                    df[df[is_tod == TRUE], wtrg.pop := ifelse(is_tod == FALSE, geotrg.pop - i.wtrg.pop, wtrg.pop), on = "geo_id"][is.na(wtrg.pop), wtrg.pop := geotrg.pop]
+                    #df[df[is_tod == TRUE & pph.ratio <= 1], wtrg.pop := ifelse(is_tod == FALSE & pph.ratio > 1, geotrg.pop - i.wtrg.pop, wtrg.pop), on = "geo_id"]
+                    #df[df[is_tod == TRUE & pph.ratio > 1], wtrg.pop := ifelse(is_tod == FALSE & pph.ratio <= 1, geotrg.pop - i.wtrg.pop, wtrg.pop), on = "geo_id"]
+                    df[, wtrg.pph := wtrg.pop / wtrg]
+                    if(all(df[is_tod == FALSE & has_tod == TRUE, wtrg.pph <= max.wtrg.pph])) break
+                    df[is_tod == TRUE & geo_id %in% df[is_tod == FALSE & has_tod == TRUE & wtrg.pph > max.wtrg.pph, geo_id], wtrg.pph := wtrg.pph * 1.01]
+                }
+                todshare[[ind]] <- df[is_tod == TRUE, sum(wtrg * wtrg.pph)] / df[, sum(wtrg * wtrg.pph, na.rm = TRUE)] * 100
+                todshare[["HH2"]] <- df[is_tod == TRUE, sum(wtrg)] / df[, sum(wtrg, na.rm = TRUE)] * 100
+                #CTdf[[ind]][, wtrg.pph := df$wtrg.pph][, wtrg.pop := df$wtrg.pop]
+            } else 
+                todshare[[ind]] <- df[is_tod == TRUE, sum(wtrg)]/df[, sum(wtrg, na.rm = TRUE)] * 100
             
             # update HCT growth share for each geography
             df[, target.share := round(wtrg/trggrowth * 100, 1)]
@@ -340,7 +393,9 @@ for(min.share in scenarios) { #  iterate over scenarios of growth limits
     # assemble results
     hhres <- CTdf[["HH"]][, .(subreg_id = control_id, geo_id, RGid, name, is_tod = as.integer(is_tod), DUtotcapacity = round(totcap),
                               DUnetcapacity = round(netcap), DUcapshare = round(capshare, 1), target_share = round(target.share, 1),
-                              target_growth_ini = round(trg0), target_growth_final = round(wtrg), HH2018 = base18, HH2020 = base20, HH2050 = round(tottrg.final))]
+                              target_growth_ini = round(trg0), target_growth_final = round(wtrg), 
+                              HH2018 = base18, HH2020 = base20, HH2050 = round(tottrg.final), 
+                              PPH20 = pph20, PPH50 = CTdf[["HHPop"]]$tottrg.final / tottrg.final)]
     
     popres <- CTdf[["HHPop"]][, .(subreg_id = control_id, geo_id, RGid, name, is_tod = as.integer(is_tod), 
                                   target_share = round(target.share, 1), target_growth_final = round(wtrg), HHPop2018 = base18, HHPop2020 = base20, 
@@ -349,6 +404,11 @@ for(min.share in scenarios) { #  iterate over scenarios of growth limits
                                 EMPnetcapacity = round(netcap), EMPcapshare = round(capshare, 1), target_share = round(target.share, 1),
                                 target_growth_ini = round(trg0), target_growth_final = round(wtrg), Emp2018 = base18, Emp2020 = base20, Emp2050 = round(tottrg.final))]
     
+    checkdf <- merge(hhres[, .(HH = sum(HH2050)), by = "geo_id"], popres[, .(Pop = sum(HHPop2050)), by = "geo_id"], by = "geo_id")
+    checkdf <- merge(checkdf, targets[["HH"]][, .(geo_id, HHtrg = trg50)], by = "geo_id")
+    checkdf <- merge(checkdf, targets[["HHPop"]][, .(geo_id, Poptrg = trg50)], by = "geo_id")
+    cat("\nLargest diffs: HH = ", max(checkdf[, abs(HH - HHtrg)]), ", HHPop = ", max(checkdf[, abs(Pop - Poptrg)]))
+
     # table of checks
     check <- merge(merge(checks[["HH"]][, .(RGid, tod_share_hh = round(share, 1))], 
                          checks[["HHPop"]][, .(RGid, tod_share_pop = round(share, 1))], by = "RGid"),
@@ -360,7 +420,7 @@ for(min.share in scenarios) { #  iterate over scenarios of growth limits
                                      tod_share_emp = round(todshare.sub[["Emp"]], 2)))
     
     # attach total check
-    check <- rbind(check, data.table(RGid = -1, tod_share_hh = round(todshare[["HH"]], 2), 
+    check <- rbind(check, data.table(RGid = -1, tod_share_hh = round(todshare[["HH2"]], 2), 
                                      tod_share_pop = round(todshare[["HHPop"]], 2),
                                      tod_share_emp = round(todshare[["Emp"]], 2)))
     check[, RGid := as.character(RGid)][RGid == "-2", RGid := "Tot within RG"]
@@ -382,6 +442,22 @@ for(min.share in scenarios) { #  iterate over scenarios of growth limits
         unrolled <- if(is.null(unrolled)) this.unrolled else merge(unrolled, this.unrolled, all = TRUE)
     }
     CTs[["unrolled"]] <- unrolled
+    
+    # aggregate to regional and interpolate into all years
+    years.to.fit <- 2018:2050
+    unrolled.reg <- NULL
+    for (indicator in names(to.interpolate)) {
+        if(is.null(to.interpolate[[indicator]])) next
+        tmpdf <- copy(to.interpolate[[indicator]])
+        setnames(tmpdf, paste0(indicator, c(2018, 2020, 2050)), paste0("V", c(2018, 2020, 2050)))
+        regCT <- tmpdf[, .(subreg_id = -1, V2018 = sum(V2018), V2020 = sum(V2020), V2050 = sum(V2050))]
+        setnames(regCT, paste0("V", c(2018, 2020, 2050)), paste0(indicator, c(2018, 2020, 2050)))
+        regCTintp <- interpolate.controls.with.ankers(regCT, indicator, anker.years = c(2018, 2020, 2050),
+                                                             years.to.fit = years.to.fit, id.col = geo.name)
+        this.unrolled <- unroll(regCTintp, indicator, new.id.col = geo.name)
+        unrolled.reg <- if(is.null(unrolled.reg)) this.unrolled else merge(unrolled.reg, this.unrolled, all = TRUE)
+    }
+    CTs[["unrolled regional"]] <- unrolled.reg
     
     # save results into an Excel file
     if(save.results)
@@ -444,7 +520,7 @@ if(do.plot){
             datbar <- rbind(datbar, dat.for.bars[[ind]][[as.character(share)]][RGid > -1 & (iter == 0 | iter == max(iter))][, `:=`(max_share = 100-share, max_iter = max(iter))])
         }
         datbar[name == "Bothell" & geo_id == 126, name := "Bothell (Sno)"]
-        datbar[startsWith(name, "Mid County"), name := "Uninc. Pierce HCT"]
+        datbar[startsWith(name, "Mid-County"), name := "Uninc. Pierce HCT"]
         sortdat <- datbar[max_share == main.bar & iter == 0]
         sortdat$name <- reorder(sortdat$name, sortdat$target.share, decreasing = TRUE)
         datbar <- datbar[max_share == point.bar & iter == 0, target.share := 0]
@@ -472,10 +548,10 @@ if(do.plot){
     dev.off()
 }
 
-# # write out values for selected jurisdictions
-# select.jur <- c("University Place", "Puyallup")
-# out <- weights[["HH"]][name %in% select.jur]
-# out <- out[CTdf[["HH"]][name %in% select.jur & is_tod == TRUE, ], .(name, juris_target_growth = i.trggrowth, iteration = iter, tod_share = target.share, 
-#                                                target_total = wtrg, remainingTODcapacity = remcap, TODcapacity_share = todcap.share, 
-#                                                increment = incr, weight = 1 + scale/100), on = .(name)][order(name, iteration)]
-# fwrite(out, file = "selected_cities_split_ct.csv")
+# write out values for selected jurisdictions
+select.jur <- c("University Place", "Puyallup")
+out <- weights[["HH"]][name %in% select.jur]
+out <- out[CTdf[["HH"]][name %in% select.jur & is_tod == TRUE, ], .(name, juris_target_growth = i.trggrowth, iteration = iter, tod_share = target.share,
+                                               target_total = wtrg, remainingTODcapacity = remcap, TODcapacity_share = todcap.share,
+                                               increment = incr, weight = 1 + scale/100), on = .(name)][order(name, iteration)]
+fwrite(out, file = "selected_cities_split_ct.csv")

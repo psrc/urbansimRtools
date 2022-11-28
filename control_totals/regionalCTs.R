@@ -1,4 +1,10 @@
-#library(psrccensus)
+## Script for generating regional control totals.
+## Currently only works for households.
+## It disaggregates given HH and HHPop totals into groups by persons, workers and income.
+##
+## Mike Jensen & Hana Sevcikova, PSRC 
+## 2022-11-28
+
 library(dplyr)
 library(srvyr)
 library(magrittr)
@@ -7,8 +13,27 @@ library(DBI)
 library(odbc)
 library(RMySQL)
 library(readxl)
+library(tools)
 
+# settings related to base year data
 base_year <- 2018
+get.data.from.rda <- TRUE # if TRUE, data retrieved from a previously stored rda file
+get.data.from.mysql <- FALSE # if FALSE, and get.data.from.rda is FALSE, data is retrieved from PUMs
+base.db <- paste0(base_year,"_parcel_baseyear") # mysql DB (used only if get.data.from.mysql is TRUE)
+store.base.data <- TRUE # save retrieved base year data into an rda file (not used if get.data.from.rda is TRUE) 
+rda.file.name <- paste0("base_year_data_", base_year, "_for_CT.rda") # file name where to store the data
+
+# where is the forecast data
+get.forecast.from.elmer <- FALSE # if FALSE, the forecast is retrieved from a file
+# the file is used only if get.forecast.from.elmer is FALSE
+#forecast.file.name <- "J:/Projects/UrbanSim/NEW_DIRECTORY/Inputs/annual_control_totals/controls_from_2017_macro_forecast/Working_Update_annual_hh_control_totals_2018_forecasts_2018_BY.xlsx"
+#forecast.file.name <- "~/psrc/control_totals/Working_Update_annual_hh_control_totals_2018_forecasts_2018_BY.xlsx"
+forecast.file.name <- "~/psrc/R/urbansimRtools/control_totals/LUVit_ct_by_tod_generator_90-90-90_2022-11-22.xlsx"
+# if the forecast the regional macroeconomic forecast  
+is.forecast.ref <- FALSE # if FALSE it is assumed it comes from a version of unrolled control totals
+
+# where to write results
+output.file.name <- paste0("regional_annual_household_control_totals-", Sys.Date(), ".csv")
 
 # Functions ---------------------------------------------------------
 
@@ -50,82 +75,118 @@ rebalance <- function() {
   }
 }
 
+mysql.connection <- function(dbname = "2018_parcel_baseyear") {
+  # credentials can be stored in a file (as one column: username, password, host)
+  if(file.exists("creds.txt")) {
+    creds <- read.table("creds.txt", stringsAsFactors = FALSE)
+    un <- creds[1,1]
+    psswd <- creds[2,1]
+    if(nrow(creds) > 2) h <- creds[3,1] 
+    else h <- .rs.askForPassword("host:")
+  } else {
+    un <- .rs.askForPassword("username:")
+    psswd <- .rs.askForPassword("password:")
+    h <- .rs.askForPassword("host:")
+  }
+  dbConnect(MySQL(), user = un, password = psswd, dbname = dbname, host = h)
+}
+
+# income levels 
+income.bins <- c(0, 50000, 75000, 100000, 0)
+income.labels <- c("Under $50,000", "$50,000-$74,999", "$75,000-$99,999", "$100,000 or more")
+
 # Data retrieval ----------------------------------------------------
 
-## Get household size combinations from relevant PUMS
-# ref_data <- get_psrc_pums(1, base_year, "h", c("NP","HINCP","NWRK","BINCOME"))                     # Reference data from regional PUMS
-# ref_data %<>% mutate(pph=case_when(as.integer(NP)>7 ~7L, !is.na(NP) ~as.integer(NP)),
-#                      workers=case_when(as.integer(NWRK)>3 ~4L, !is.na(NWRK) ~as.integer(NWRK)),
-#                      income=case_when(grepl("\\b25,000\\b", as.character(BINCOME)) ~"Under $50,000",
-#                                           !is.na(BINCOME) ~as.character(BINCOME))) %>%
-#               mutate(across(c(pph, workers), factor))
-# hhs <- psrc_pums_count(ref_data, group_vars="pph", incl_na=FALSE) %>%                              # Counts by household size
-#   rename(year=DATA_YEAR) %>% setDT() %>% .[pph!="Total", .(year, pph, count, share)]
-# hhs[, c("year", "pph"):=lapply(.SD, as.integer), .SDcols=c("year", "pph")]
-# ref_data1 <- ungroup(ref_data) %>% filter(if_any(c(workers, income), ~ !is.na(.))) %>%
-#   group_by(pph) %>% group_by(interact(workers, income), .add=TRUE)
-# hhs_full2 <- psrc_pums_count(ref_data1, group_vars="keep_existing", incl_na=FALSE) %>%              # Counts by full breakdown of CT categories
-#   .[income!="Total" & workers!="Total", .(year, pph, workers, income, count, share)] %>% .[, year:=base_year]
-# levels(hhs_full2$income) <- c("Under $50,000", "$50,000-$74,999", "$75,000-$99,999", "$100,000 or more")
-# hhs_full[, c("year", "pph", "workers"):=lapply(.SD, as.integer), .SDcols=c("year", "pph", "workers")]
+if(get.data.from.rda){
+  hhs_full <- readRDS(rda.file.name)
+} else {
 
-## Get household size combinations from UrbanSim baseyear itself
-prsn_sql <- "CASE WHEN h.persons < 7 THEN h.persons ELSE 7 END"
-wrkr_sql <- "CASE WHEN workers < 4 THEN h.workers ELSE 4 END"
-inc_sql <- paste("CASE WHEN h.income >= 100000 THEN '$100,000 or more'",
-                 "WHEN h.income >= 75000 THEN '$75,000-$99,999'",
-                 "WHEN h.income >= 50000 THEN '$50,000-$74,999'",
-                 "ELSE 'under $50,000' END")
+  if(!get.data.from.mysql){
+    # Get household size combinations from relevant PUMS
+    library(psrccensus)
+    ref_data <- get_psrc_pums(1, base_year, "h", c("NP","HINCP","NWRK","BINCOME"))                     # Reference data from regional PUMS
+    ref_data %<>% mutate(pph=case_when(as.integer(NP)>7 ~7L, !is.na(NP) ~as.integer(NP)),
+                         workers=case_when(as.integer(NWRK)>3 ~4L, !is.na(NWRK) ~as.integer(NWRK)),
+                         income=case_when(grepl("\\b25,000\\b", as.character(BINCOME)) ~"Under $50,000",
+                                          !is.na(BINCOME) ~as.character(BINCOME))) %>%
+      mutate(across(c(pph, workers), factor))
+    hhs <- psrc_pums_count(ref_data, group_vars="pph", incl_na=FALSE) %>%                              # Counts by household size
+      rename(year=DATA_YEAR) %>% setDT() %>% .[pph!="Total", .(year, pph, count, share)]
+    hhs[, c("year", "pph"):=lapply(.SD, as.integer), .SDcols=c("year", "pph")]
+    ref_data1 <- ungroup(ref_data) %>% filter(if_any(c(workers, income), ~ !is.na(.))) %>%
+      group_by(pph) %>% group_by(interact(workers, income), .add=TRUE)
+    hhs_full <- psrc_pums_count(ref_data1, group_vars="keep_existing", incl_na=FALSE) %>%              # Counts by full breakdown of CT categories
+      .[income!="Total" & workers!="Total", .(year, pph, workers, income, count, share)] %>% .[, year:=base_year]
+    levels(hhs_full$income) <- income.labels
+    hhs_full[, c("year", "pph", "workers"):=lapply(.SD, as.integer), .SDcols=c("year", "pph", "workers")]
+  } else { # get data from mysql
+    ## Get household size combinations from UrbanSim baseyear itself
+    prsn_sql <- "CASE WHEN h.persons < 7 THEN h.persons ELSE 7 END"
+    wrkr_sql <- "CASE WHEN workers < 4 THEN h.workers ELSE 4 END"
+    inc_sql <- paste("CASE WHEN h.income >= 100000 THEN '", income.labels[4], "'",
+                     "WHEN h.income >= 75000 THEN '", income.labels[3], "'",
+                     "WHEN h.income >= 50000 THEN '", income.labels[2], "'",
+                     "ELSE '", income.labels[1], "' END")
+    
+    hhs_sql <- paste("SELECT", base_year, "AS year,", prsn_sql, "AS pph,", 
+                     wrkr_sql, "AS workers,", inc_sql, "as income, count(*) AS count", 
+                     "FROM", base.db,".households", "AS h",
+                     "GROUP BY", prsn_sql, ",",  wrkr_sql, ",", inc_sql)
+    
+    
+    mysql_connection <- mysql.connection(base.db)
+    
+    hhs_full <- DBI::dbGetQuery(mysql_connection, DBI::SQL(hhs_sql)) %>% setDT()
+    sums <- hhs_full[,.(hh_tot=sum(count)), by=.(pph)]
+    setkey(hhs_full, pph)
+    setkey(sums, pph)
+    hhs_full[sums, share:=count/hh_tot]
+    hhs_full[, income := trimws(income)]
+    DBI::dbDisconnect(mysql_connection)
+  } 
+  if(store.base.data) saveRDS(hhs_full, file = rda.file.name)
+}
 
-hhs_sql <- paste("SELECT", base_year, "AS year,", prsn_sql, "AS pph,", 
-                 wrkr_sql, "AS workers,", inc_sql, "as income, count(*) AS count", 
-                 "FROM", paste0(base_year,"_parcel_baseyear.households"), "AS h",
-                 "GROUP BY", prsn_sql, ",",  wrkr_sql, ",", inc_sql)
-
-mysql_connection <- RMySQL::dbConnect(RMySQL::MySQL(),
-                                      dbname=paste0(base_year,"_parcel_baseyear"),
-                                      username="psrcurbansim",
-                                      password="psrc_urbansim",
-                                      host="10.10.10.203",
-                                      port=3306)
-
-hhs_full <- DBI::dbGetQuery(mysql_connection, DBI::SQL(hhs_sql)) %>% setDT()
-sums <- hhs_full[,.(hh_tot=sum(count)), by=.(pph)]
-setkey(hhs_full, pph)
-setkey(sums, pph)
-hhs_full[sums, share:=count/hh_tot]
-DBI::dbDisconnect(mysql_connection)
-
-# Retrieve macro forecast from Elmer
-# hh_4cast_sql <- paste("SELECT p.data_year AS year, p.population AS hh_pop, h.households AS household_count",
-#                       "FROM Elmer.Macroeconomic.v_pop AS p JOIN Elmer.Macroeconomic.v_households AS h ON p.data_year=h.data_year",
-#                       "WHERE p.group_name='InHouseholds';")
-# 
-# elmer_connection <- DBI::dbConnect(odbc::odbc(), 
-#                                    driver = "ODBC Driver 17 for SQL Server",
-#                                    server = "AWS-PROD-SQL\\Sockeye",
-#                                    database = "Elmer",
-#                                    trusted_connection = "yes",
-#                                    port = 1433)
-# 
-# forecast <- DBI::dbGetQuery(elmer_connection, DBI::SQL(hh_4cast_sql))  %>% setDT()
-# DBI::dbDisconnect(elmer_connection)
-
-# Retrieve macro forecast from file - for those who can't connect to Elmer
-xlf <- paste0(#"J:/Projects/UrbanSim/NEW_DIRECTORY/Inputs/",
-  #"annual_control_totals/controls_from_2017_macro_forecast/",
-  "~/psrc/control_totals/",
-  "Working_Update_annual_hh_control_totals_2018_forecasts_2018_BY.xlsx")
-forecast <- data.table(read_excel(xlf, sheet="2018 REF Forecast Data",                             # Load household population and households from Macro forecast  
+if(get.forecast.from.elmer) {
+  # Retrieve macro forecast from Elmer
+  hh_4cast_sql <- paste("SELECT p.data_year AS year, p.population AS hh_pop, h.households AS household_count",
+                        "FROM Elmer.Macroeconomic.v_pop AS p JOIN Elmer.Macroeconomic.v_households AS h ON p.data_year=h.data_year",
+                        "WHERE p.group_name='InHouseholds';")
+  
+  elmer_connection <- DBI::dbConnect(odbc::odbc(),
+                                     driver = "ODBC Driver 17 for SQL Server",
+                                     server = "AWS-PROD-SQL\\Sockeye",
+                                     database = "Elmer",
+                                     trusted_connection = "yes",
+                                     port = 1433)
+  
+  forecast <- DBI::dbGetQuery(elmer_connection, DBI::SQL(hh_4cast_sql))  %>% setDT()
+  DBI::dbDisconnect(elmer_connection)
+} else { 
+  # Load household population and households from a file
+  # It can be either a csv or an Excel file
+  if(file_ext(forecast.file.name) == "csv") forecast <- fread(forecast.file.name) # it should have columns year, hh_pop, household_count
+  else {
+    if(is.forecast.ref) { # it is Macroeconomic forecast
+      forecast <- data.table(read_excel(forecast.file.name, sheet="2018 REF Forecast Data",                             
                                   range="G28:AM30", col_names=as.character(2018:2050))) %>% 
-  .[c(1,3),] %>% data.table::transpose(keep.names="year") %>% setnames(c("V1", "V2"), c("hh_pop", "household_count"))
-forecast[, year := as.integer(year)]
+              .[c(1,3),] %>% data.table::transpose(keep.names="year") %>% setnames(c("V1", "V2"), c("hh_pop", "household_count"))
+      forecast[, year := as.integer(year)]
+    } else { # the forecast comes from a sheet in the same format as unrolled control totals
+      forecast <- data.table(read_excel(forecast.file.name, sheet="unrolled regional"))
+      forecast <- forecast[, .(year = as.integer(year), hh_pop = total_hhpop, household_count = total_hh)]
+    }
+  }
+}
+
 
 # 1. Households by size ---------------------------------------------
 
+hhs_full[, income := trimws(income)]
+
 CTpph <- data.table(expand.grid(year = sort(unique(forecast$year)), pph = 1:7))                    # create all combinations of year and pph
 
-CTpph[hhs_full, household_count := i.count, on = .(year, pph)]                                     # merge base year hh counts with CTpph 
+CTpph[hhs_full[, .(count = sum(count)), by = .(year, pph)], household_count := i.count, on = .(year, pph)]                                     # merge base year hh counts with CTpph 
 CTpph[is.na(household_count), household_count := 1]
 CTpph[, hhsize := ifelse(pph < 3, "small", "large")]
 
@@ -154,50 +215,20 @@ CTpop <- data.table(expand.grid(year = sort(unique(forecast$year)),             
 CTpop %<>% .[hhs_full, share:=i.share, on=key(.)] %>% setkeyv(c("year", "pph")) %>%                
   .[CTpph, household_count:=share * i.household_count, on=key(.)]                                  # Apply baseyear worker & income shares by pph
 
+CTpop[, income := factor(income, levels = income.labels)]
+CTpop[, income_min := income.bins[income]][, income_max := income.bins[as.integer(income)+1]-1]
+
 # QC <- CTpop[, lapply(.SD, sum), by=.(year, pph), .SDcols=c("share","household_count")]           # Verify
 
 # 3. Format for baseyear and export ---------------------------------
 
 # # HHs
-# CTpop <- CTpop[year > base_year]
-# CTpop[, `:=`(total_number_of_households = household_count, 
-#              income_min = 0, income_max = -1, 
-#              persons_min = pph, persons_max = ifelse(pph < 7, pph, -1),
-#              workers_min = 0, workers_max = -1)]
-# qr <- dbSendQuery(mydb, "select * from annual_household_control_totals")
-# cttbl <- data.table(fetch(qr, n = -1))
-# cttbl <- cttbl[year >= base_year]
-# resCThh <- cttbl[!year %in% unique(CTpop$year)]
-# resCThh <- rbind(resCThh, CTpop[, colnames(cttbl), with = FALSE])
-# dbClearResult(qr)
-# 
-# # jobs                                                                                           # Haven't built employment in yet--uses different Macro file
-# qr <- dbSendQuery(mydb, "select * from annual_employment_control_totals")
-# cttbl <- data.table(fetch(qr, n = -1))
-# cttbl <- cttbl[year >= base_year]
-# resCTjobs <- cttbl[!year %in% unique(CTs$year)]
-# resCTjobs <- rbind(resCTjobs, 
-#                    CTs[, .(city_id, year, total_number_of_jobs = total_emp, home_based_status = -1, sector_id = -1)]
-# )
-# dbClearResult(qr)
-# 
-# # disconnect DB
-# dbDisconnect(mydb)
+CTpop <- CTpop[year > base_year]
+CTpop[, `:=`(persons_min = pph, persons_max = ifelse(pph < 7, pph, -1),
+              workers_min = workers, workers_max = ifelse(workers < 4, workers, -1),
+             total_number_of_households = round(household_count))]
+CTpop[, `:=`(income = NULL, workers = NULL, pph = NULL, household_count = NULL, share = NULL)]
 
-# write outputs into working DB
-# if(store.outputs) {
-#   mydb <- mysql.connection(work.db)
-#   dbWriteTable(mydb, "annual_household_control_totals", resCThh, overwrite = overwrite.existing, row.names = FALSE)
-#   dbWriteTable(mydb, "annual_employment_control_totals", resCTjobs, overwrite = overwrite.existing, row.names = FALSE)
-#   dbDisconnect(mydb)
-# }
-# 
-# # Check results
-# checkDT <- CTpop[year > base_year, .(total_hh = sum(household_count), total_hhpop = sum(pph * household_count)),
-#                  by = .(city_id, year)]
-# checkDT[CTs, `:=`(diff_hh = total_hh - i.total_hh, diff_hhpop = total_hhpop - i.total_hhpop),
-#         on = c("city_id", "year")]
-# 
-# cat("\nMax differences in HH:", range(checkDT$diff_hh))
-# cat("\nMax differences in HHpop:", range(checkDT$diff_hhpop))
-# cat("\n")
+# save as csv file
+fwrite(CTpop, file = output.file.name)
+
