@@ -1,6 +1,8 @@
 ## Script for generating regional control totals.
-## Currently only works for households.
-## It disaggregates given HH and HHPop totals into groups by persons, workers and income.
+## For households, it disaggregates given HH and HHPop totals 
+##     into groups by persons, workers and income.
+## For jobs, it either copies a given table or it scales it to 
+##     given forecast. TODO: implement generating job totals from REF.
 ##
 ## Mike Jensen & Hana Sevcikova, PSRC 
 ## 2022-11-28
@@ -32,8 +34,14 @@ forecast.file.name <- "~/psrc/R/urbansimRtools/control_totals/LUVit_ct_by_tod_ge
 # if the forecast the regional macroeconomic forecast  
 is.forecast.ref <- FALSE # if FALSE it is assumed it comes from a version of unrolled control totals
 
+# what should be done for jobs CTs (currently only scaling implemented)
+create.emp.totals <- TRUE # if FALSE only HHs CTs are created
+scale.emp.controls <- TRUE # if FALSE the totals from the table below are simply copied; otherwise they are scaled to forecast
+emp.ct.table <- "psrc_2014_parcel_baseyear_just_friends.annual_employment_control_totals_lum_sector"
+
 # where to write results
-output.file.name <- paste0("regional_annual_household_control_totals-", Sys.Date(), ".csv")
+output.file.name.hh <- paste0("regional_annual_household_control_totals-", Sys.Date(), ".csv")
+output.file.name.emp <- paste0("regional_annual_employment_control_totals-", Sys.Date(), ".csv")
 
 # Functions ---------------------------------------------------------
 
@@ -165,7 +173,7 @@ if(get.forecast.from.elmer) {
 } else { 
   # Load household population and households from a file
   # It can be either a csv or an Excel file
-  if(file_ext(forecast.file.name) == "csv") forecast <- fread(forecast.file.name) # it should have columns year, hh_pop, household_count
+  if(file_ext(forecast.file.name) == "csv") forecast <- fread(forecast.file.name) # it should have columns year, hh_pop, household_count, (optionally job_count)
   else {
     if(is.forecast.ref) { # it is Macroeconomic forecast
       forecast <- data.table(read_excel(forecast.file.name, sheet="2018 REF Forecast Data",                             
@@ -174,7 +182,7 @@ if(get.forecast.from.elmer) {
       forecast[, year := as.integer(year)]
     } else { # the forecast comes from a sheet in the same format as unrolled control totals
       forecast <- data.table(read_excel(forecast.file.name, sheet="unrolled regional"))
-      forecast <- forecast[, .(year = as.integer(year), hh_pop = total_hhpop, household_count = total_hh)]
+      forecast <- forecast[, .(year = as.integer(year), hh_pop = total_hhpop, household_count = total_hh, job_count = total_emp)]
     }
   }
 }
@@ -230,5 +238,20 @@ CTpop[, `:=`(persons_min = pph, persons_max = ifelse(pph < 7, pph, -1),
 CTpop[, `:=`(income = NULL, workers = NULL, pph = NULL, household_count = NULL, share = NULL)]
 
 # save as csv file
-fwrite(CTpop, file = output.file.name)
+fwrite(CTpop, file = output.file.name.hh)
 
+if(create.emp.totals){
+  mysql_connection <- mysql.connection(base.db)
+  CTemp <- DBI::dbGetQuery(mysql_connection, DBI::SQL(paste0("select * from ", emp.ct.table))) %>% setDT()
+  if("city_id" %in% colnames(CTemp)) CTemp[, city_id := NULL]
+  DBI::dbDisconnect(mysql_connection)
+  CTemp <- CTemp[year > base_year]
+  if(scale.emp.controls) { # assumes forecast was read from a file and contains a column job_count
+    setnames(CTemp, "total_number_of_jobs", "number_of_jobs_prev")
+    CTemp[, tot_jobs := sum(number_of_jobs_prev), by = .(year)]
+    CTemp[, share := number_of_jobs_prev/tot_jobs]
+    CTemp[forecast, forecast_total := i.job_count, on = .(year)]
+    CTemp[, total_number_of_jobs := round(forecast_total * share)][, `:=`(number_of_jobs_prev = NULL, tot_jobs = NULL, share = NULL, forecast_total = NULL)]
+  }
+  fwrite(CTemp, file = output.file.name.emp)
+}

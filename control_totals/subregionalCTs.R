@@ -15,7 +15,7 @@ setwd("~/psrc/R/urbansimRtools/control_totals")
 
 # Full name of the input file containing the unrolled control totals
 #CT.file <- '~/psrc/R/control-total-vision2050/Control-Totals-LUV3RebasedTrg-2022-08-01.xlsx'
-CT.file <- 'LUVit_ct_by_tod_generator_90-90-90_2022-11-15.xlsx'
+CT.file <- 'LUVit_ct_by_tod_generator_90-90-90_2022-11-22.xlsx'
 
 # baseyear DB
 base.db <- "2018_parcel_baseyear"
@@ -29,7 +29,7 @@ base.year <- 2018
 last.year <- 2050
 
 # should outputs be stored in the DB and should existing tables be overwritten
-store.outputs <- FALSE
+store.outputs <- TRUE
 overwrite.existing <- FALSE
 
 # name of the geo column in parcels
@@ -37,11 +37,13 @@ geo.id <- "control_id"
 # name of the geo column in CTs
 ct.geo.id <- "subreg_id"
 
-# names of existing regional control tables
-#reg.hh.ct.table <- "annual_household_control_totals"
-#reg.emp.ct.table <- "annual_employment_control_totals"
-reg.hh.ct.table <- "2018_parcel_baseyear_sandbox.annual_household_control_totals_jf_equiv_18by_ref18" # we need regional 2045
-reg.emp.ct.table <- "psrc_2014_parcel_baseyear_just_friends.annual_employment_control_totals_lum_sector"
+# names of existing regional control tables (if NULL the CTs are read from a csv file)
+#reg.hh.ct.table <- "2018_parcel_baseyear_sandbox.annual_household_control_totals_jf_equiv_18by_ref18" # we need regional 2045
+reg.hh.ct.table <- NULL
+reg.hh.ct.file <- "~/psrc/R/urbansimRtools/control_totals/regional_annual_household_control_totals-2022-11-28.csv"
+#reg.emp.ct.table <- "psrc_2014_parcel_baseyear_just_friends.annual_employment_control_totals_lum_sector"
+reg.emp.ct.table <- NULL
+reg.emp.ct.file <- "~/psrc/R/urbansimRtools/control_totals/regional_annual_employment_control_totals-2022-11-28.csv"
 
 ###### End of users settings
 
@@ -140,18 +142,18 @@ CTpop <- data.table(expand.grid(geo_id = cities, year = sort(unique(c(base.year,
 # Read HHs joined on buildings and parcels from mysql (need parcels to get control_id) 
 mydb <- mysql.connection(base.db)
 
-qr <- dbSendQuery(mydb, paste0("select  t3.", geo.id, ", 
+qr <- dbSendQuery(mydb, paste0("select  t3.", ct.geo.id, ", 
 (case when t1.persons > 7 then 7 else t1.persons end) as pph, 
 count(t1.household_id) as household_count from households as t1 
 join buildings as t2 on t1.building_id=t2.building_id 
 join ", parcels.db, ".parcels as t3 on t2.parcel_id=t3.parcel_id 
-group by t3.", geo.id, ", (case when t1.persons > 7 then 7 else t1.persons end)"))
+group by t3.", ct.geo.id, ", (case when t1.persons > 7 then 7 else t1.persons end)"))
 
 hhs <- data.table(fetch(qr, n = -1))
 dbClearResult(qr)
 
 hhs[, year := base.year]
-setnames(hhs, geo.id, "geo_id") # temporary
+setnames(hhs, ct.geo.id, "geo_id") # temporary
 
 # merge base year CTs with CTpop 
 CTpop[hhs, household_count := i.household_count, on = c("geo_id", "year", "pph")]
@@ -183,26 +185,38 @@ CTpop[, `:=`(total_number_of_households = household_count,
              workers_min = 0, workers_max = -1)]
 setnames(CTpop, "geo_id", ct.geo.id)
 
-qr <- dbSendQuery(mydb, paste0("select * from ", reg.hh.ct.table)) # load existing regional CTs
-cttbl <- data.table(fetch(qr, n = -1))
+if(is.null(reg.hh.ct.table)) { # get the regional totals from file
+  cttbl <- fread(reg.hh.ct.file)
+  cttbl[, (ct.geo.id) := -1]
+} else { # load from mysql
+  qr <- dbSendQuery(mydb, paste0("select * from ", reg.hh.ct.table)) # load existing regional CTs
+  cttbl <- data.table(fetch(qr, n = -1))
+  dbClearResult(qr)
+  if("city_id" %in% colnames(cttbl))
+    setnames(cttbl, "city_id", ct.geo.id)
+}
+
 cttbl <- cttbl[year >= base.year]
-if("city_id" %in% colnames(cttbl))
-  setnames(cttbl, "city_id", ct.geo.id)
 resCThh <- cttbl[!year %in% unique(CTpop$year)]
 resCThh <- rbind(resCThh, CTpop[, colnames(cttbl), with = FALSE])
-dbClearResult(qr)
 
 # jobs
-qr <- dbSendQuery(mydb, paste0("select * from ", reg.emp.ct.table))
-cttbl <- data.table(fetch(qr, n = -1))
+if(is.null(reg.emp.ct.table)) { # get the regional totals from file
+  cttbl <- fread(reg.emp.ct.file)
+  cttbl[, (ct.geo.id) := -1]
+} else { # load from mysql
+  qr <- dbSendQuery(mydb, paste0("select * from ", reg.emp.ct.table))
+  cttbl <- data.table(fetch(qr, n = -1))
+  dbClearResult(qr)
+  if("city_id" %in% colnames(cttbl))
+    setnames(cttbl, "city_id", ct.geo.id)
+}
+
 cttbl <- cttbl[year >= base.year]
-if("city_id" %in% colnames(cttbl))
-  setnames(cttbl, "city_id", ct.geo.id)
 resCTjobs <- cttbl[!year %in% unique(CTs$year)]
 newCTs <- CTs[, .(geo_id, year, total_number_of_jobs = total_emp, home_based_status = -1, sector_id = -1)]
 setnames(newCTs, "geo_id", ct.geo.id)
 resCTjobs <- rbind(resCTjobs, newCTs)
-dbClearResult(qr)
 
 # disconnect DB
 dbDisconnect(mydb)
