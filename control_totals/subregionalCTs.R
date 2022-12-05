@@ -128,6 +128,9 @@ set.count.by.borrowed.distr <- function(bdist, max.small = 800){
 
 # Start of processing
 #####################
+# fix random seed
+set.seed(1234)
+
 # read inputs
 #CTs <- fread(CT.file) # if csv file
 CTs <- data.table(read.xlsx(CT.file, sheet = "unrolled")) # if Excel sheet

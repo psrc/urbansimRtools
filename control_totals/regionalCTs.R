@@ -191,6 +191,8 @@ if(get.forecast.from.elmer) {
   }
 }
 
+# 0. Fix random seed
+set.seed(1234)
 
 # 1. Households by size ---------------------------------------------
 
