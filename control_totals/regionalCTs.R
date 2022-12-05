@@ -3,9 +3,10 @@
 ##     into groups by persons, workers and income.
 ## For jobs, it either copies a given table or it scales it to 
 ##     given forecast. TODO: implement generating job totals from REF.
-##
+## Results are written into csv files and optionally to a mysql DB.
+## 
 ## Mike Jensen & Hana Sevcikova, PSRC 
-## 2022-11-28
+## 2022-12-05
 
 library(dplyr)
 library(srvyr)
@@ -19,7 +20,7 @@ library(tools)
 
 # settings related to base year data
 base_year <- 2018
-get.data.from.rda <- TRUE # if TRUE, data retrieved from a previously stored rda file
+get.data.from.rda <- TRUE # if TRUE, data is retrieved from a previously stored rda file
 get.data.from.mysql <- FALSE # if FALSE, and get.data.from.rda is FALSE, data is retrieved from PUMs
 base.db <- paste0(base_year,"_parcel_baseyear") # mysql DB (used only if get.data.from.mysql is TRUE)
 store.base.data <- TRUE # save retrieved base year data into an rda file (not used if get.data.from.rda is TRUE) 
@@ -42,7 +43,10 @@ emp.ct.table <- "psrc_2014_parcel_baseyear_just_friends.annual_employment_contro
 # where to write results
 output.file.name.hh <- paste0("regional_annual_household_control_totals-", Sys.Date(), ".csv")
 output.file.name.emp <- paste0("regional_annual_employment_control_totals-", Sys.Date(), ".csv")
-
+output.ct.db <- "sandbox_hana" # if not NULL, output is also written into mysql DB
+#output.ct.db <- base.db
+overwrite.existing.in.db <- FALSE # should mysql tables be overwritten (only used if output.ct.db is not NULL)  
+  
 # Functions ---------------------------------------------------------
 
 # Larry Blaine's formula
@@ -255,3 +259,12 @@ if(create.emp.totals){
   }
   fwrite(CTemp, file = output.file.name.emp)
 }
+
+if(!is.null(output.ct.db)) {
+  mysql_connection <- mysql.connection(output.ct.db)
+  dbWriteTable(mysql_connection, "annual_household_control_totals_region", CTpop, overwrite = overwrite.existing.in.db, row.names = FALSE)
+  if(create.emp.totals)
+    dbWriteTable(mysql_connection, "annual_employment_control_totals_region", CTemp, overwrite = overwrite.existing.in.db, row.names = FALSE)
+  DBI::dbDisconnect(mysql_connection)
+}
+
