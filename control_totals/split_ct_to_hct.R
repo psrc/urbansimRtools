@@ -9,7 +9,7 @@
 # The also script requires a parcel capacity file generated via
 # https://github.com/psrc/urbansimRtools/blob/master/capacity/parcels_capacity.R
 #
-# Hana Sevcikova, PSRC, 2022/11/14
+# Hana Sevcikova, PSRC, updated on 2023/01/11
 ##################################################
 
 library(data.table)
@@ -26,7 +26,7 @@ CT.file <- '~/psrc/R/control-total-vision2050/Control-Totals-LUVit-2022-11-15.xl
 
 # parcel-level capacity file
 # generated via https://github.com/psrc/urbansimRtools/blob/master/capacity/parcels_capacity.R
-capacity.file <- '~/psrc/R/urbansimRtools/capacity/CapacityPcl_res50-2022-10-12.csv'
+capacity.file <- '~/psrc/R/urbansimRtools/capacity/CapacityPcl_res50-2023-01-11.csv'
     
 save.results <- TRUE      # should results be stored in an Excel file
 do.plot <- TRUE           # should plots be created
@@ -548,10 +548,10 @@ if(do.plot){
     dev.off()
 }
 
-# write out values for selected jurisdictions
-select.jur <- c("University Place", "Puyallup")
-out <- weights[["HH"]][name %in% select.jur]
-out <- out[CTdf[["HH"]][name %in% select.jur & is_tod == TRUE, ], .(name, juris_target_growth = i.trggrowth, iteration = iter, tod_share = target.share,
-                                               target_total = wtrg, remainingTODcapacity = remcap, TODcapacity_share = todcap.share,
-                                               increment = incr, weight = 1 + scale/100), on = .(name)][order(name, iteration)]
-fwrite(out, file = "selected_cities_split_ct.csv")
+# # write out values for selected jurisdictions
+# select.jur <- c("University Place", "Puyallup")
+# out <- weights[["HH"]][name %in% select.jur]
+# out <- out[CTdf[["HH"]][name %in% select.jur & is_tod == TRUE, ], .(name, juris_target_growth = i.trggrowth, iteration = iter, tod_share = target.share,
+#                                                target_total = wtrg, remainingTODcapacity = remcap, TODcapacity_share = todcap.share,
+#                                                increment = incr, weight = 1 + scale/100), on = .(name)][order(name, iteration)]
+#fwrite(out, file = "selected_cities_split_ct.csv")

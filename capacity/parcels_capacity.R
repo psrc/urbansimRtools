@@ -1,7 +1,7 @@
 ##################################################
 # Script for computing capacity for each parcel. 
 # It uses a set of proposals from an unlimited run.
-# Hana Sevcikova, PSRC, 2022-09-26
+# Hana Sevcikova, PSRC, updated on 2023-01-11
 ##################################################
 
 library(data.table)
@@ -25,14 +25,17 @@ file.prefix <- paste0("CapacityPcl_res", res.ratio, "-", Sys.Date())
 # (ideally from an unlimited urbansim run)
 #prop.path <- "J:/Projects/Parcel\ Data/Capacity/unlimited-run-142"
 #prop.path <- "/Volumes/DataTeam/Projects/Parcel\ Data/Capacity/unlimited-run-142"
-prop.path <- "~/n$/vision2050/opusgit/urbansim_data/data/psrc_parcel/runs/awsmodel01/run_71.run_2022_09_23_14_26/csv/2019"
+#prop.path <- "~/n$/vision2050/opusgit/urbansim_data/data/psrc_parcel/runs/awsmodel01/run_71.run_2022_09_23_14_26/csv/2019"
+prop.path <- "~/AWS1E/opusgit/urbansim_data/data/psrc_parcel/runs/run_72.run_2023_01_10_21_14/csv/2019"
+
 
 # Where are csv lookup tables 
 # (base year buildings & parcels, building_sqft_per_job,
 # development_constraints, development_templates & components)
 #lookup.path <- "J:/Projects/Parcel\ Data/Capacity/lookup-2018-10-01"
 #lookup.path <- "/Volumes/DataTeam/Projects/Parcel\ Data/Capacity/lookup-2018-10-01"
-lookup.path <- "~/n$/vision2050/opusgit/urbansim_data/data/psrc_parcel/runs/awsmodel01/run_71.run_2022_09_23_14_26/csv/2018"
+#lookup.path <- "~/n$/vision2050/opusgit/urbansim_data/data/psrc_parcel/runs/awsmodel01/run_71.run_2022_09_23_14_26/csv/2018"
+lookup.path <- "~/AWS1E/opusgit/urbansim_data/data/psrc_parcel/runs/run_72.run_2023_01_10_21_14/csv/2018"
 
 rng.seed <- 1 # make it reproducible
 ####### End users settings
@@ -214,7 +217,7 @@ all.pcls[, `:=`(DUcapacity = ifelse(is.na(residential_units_prop), DUbase,
                 )]
 respcl <- all.pcls[, .(parcel_id, DUbase, DUcapacity, NRSQFbase, NRSQFcapacity, 
                        JOBSPbase, JOBSPcapacity, BLSQFbase, BLSQFcapacity)]
-respcl <- merge(pcl[, .(parcel_id, subreg_id, tod_id)], respcl, by = "parcel_id")
+respcl <- merge(pcl[, .(parcel_id, control_id, tod_id)], respcl, by = "parcel_id")
 
 # output results
 if(save)
