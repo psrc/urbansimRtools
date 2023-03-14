@@ -91,7 +91,7 @@ targets[["HH"]][is.na(trg.pph), trg.pph := 0]
 
 # read capacity file
 pcl.cap <- fread(capacity.file)
-setnames(pcl.cap, geo.name, "geo_id")
+setnames(pcl.cap, "control_id", "geo_id")
 pcl.cap[, is_tod := tod_id > 0]
 #pcl.cap[, `:=`(DUnetcap = pmax(0, DUcapacity - DUbase), EMPnetcap = pmax(0, JOBSPcapacity - JOBSPbase))]
 pcl.cap[, `:=`(DUtotcap = pmax(DUbase, DUcapacity), EMPtotcap = pmax(JOBSPbase, JOBSPcapacity))]

@@ -15,7 +15,7 @@ setwd("~/psrc/R/urbansimRtools/control_totals")
 
 # Full name of the input file containing the unrolled control totals
 #CT.file <- '~/psrc/R/control-total-vision2050/Control-Totals-LUV3RebasedTrg-2022-08-01.xlsx'
-CT.file <- 'LUVit_ct_by_tod_generator_90-90-90_2022-11-22.xlsx'
+CT.file <- 'LUVit_ct_by_tod_generator_90-90-90_2023-01-11.xlsx'
 
 # baseyear DB
 base.db <- "2018_parcel_baseyear"
@@ -38,11 +38,11 @@ geo.id <- "control_id"
 ct.geo.id <- "subreg_id"
 
 # names of existing regional control tables (if NULL the CTs are read from a csv file)
-#reg.hh.ct.table <- "2018_parcel_baseyear_sandbox.annual_household_control_totals_jf_equiv_18by_ref18" # we need regional 2045
-reg.hh.ct.table <- NULL
+reg.hh.ct.table <- "2018_parcel_baseyear.annual_household_control_totals_region" # we need regional 2045
+#reg.hh.ct.table <- NULL
 reg.hh.ct.file <- "~/psrc/R/urbansimRtools/control_totals/regional_annual_household_control_totals-2022-11-28.csv"
-#reg.emp.ct.table <- "psrc_2014_parcel_baseyear_just_friends.annual_employment_control_totals_lum_sector"
-reg.emp.ct.table <- NULL
+reg.emp.ct.table <- "2018_parcel_baseyear.annual_employment_control_totals_region"
+#reg.emp.ct.table <- NULL
 reg.emp.ct.file <- "~/psrc/R/urbansimRtools/control_totals/regional_annual_employment_control_totals-2022-11-28.csv"
 
 ###### End of users settings
@@ -190,15 +190,14 @@ setnames(CTpop, "geo_id", ct.geo.id)
 
 if(is.null(reg.hh.ct.table)) { # get the regional totals from file
   cttbl <- fread(reg.hh.ct.file)
-  cttbl[, (ct.geo.id) := -1]
 } else { # load from mysql
   qr <- dbSendQuery(mydb, paste0("select * from ", reg.hh.ct.table)) # load existing regional CTs
   cttbl <- data.table(fetch(qr, n = -1))
   dbClearResult(qr)
-  if("city_id" %in% colnames(cttbl))
-    setnames(cttbl, "city_id", ct.geo.id)
+  #if("city_id" %in% colnames(cttbl))
+  #  setnames(cttbl, "city_id", ct.geo.id)
 }
-
+cttbl[, (ct.geo.id) := -1]
 cttbl <- cttbl[year >= base.year]
 resCThh <- cttbl[!year %in% unique(CTpop$year)]
 resCThh <- rbind(resCThh, CTpop[, colnames(cttbl), with = FALSE])
@@ -206,15 +205,14 @@ resCThh <- rbind(resCThh, CTpop[, colnames(cttbl), with = FALSE])
 # jobs
 if(is.null(reg.emp.ct.table)) { # get the regional totals from file
   cttbl <- fread(reg.emp.ct.file)
-  cttbl[, (ct.geo.id) := -1]
 } else { # load from mysql
   qr <- dbSendQuery(mydb, paste0("select * from ", reg.emp.ct.table))
   cttbl <- data.table(fetch(qr, n = -1))
   dbClearResult(qr)
-  if("city_id" %in% colnames(cttbl))
-    setnames(cttbl, "city_id", ct.geo.id)
+  #if("city_id" %in% colnames(cttbl))
+  #  setnames(cttbl, "city_id", ct.geo.id)
 }
-
+cttbl[, (ct.geo.id) := -1]
 cttbl <- cttbl[year >= base.year]
 resCTjobs <- cttbl[!year %in% unique(CTs$year)]
 newCTs <- CTs[, .(geo_id, year, total_number_of_jobs = total_emp, home_based_status = -1, sector_id = -1)]
