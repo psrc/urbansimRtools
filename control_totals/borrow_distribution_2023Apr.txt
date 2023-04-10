@@ -1,0 +1,29 @@
+recipient_geo_id	donor_geo_id	recipient_geo_name	donor_geo_name
+46	3	 Auburn PAA	 Auburn
+48	1	 Bellevue PAA	 Bellevue
+49	29	 Black Diamond PAA	 Black Diamond
+202	30	 Carnation UGA	 Carnation
+203	32	 Covington PAA	 Covington
+157	144	 Darrington UGA	 Darrington
+204	33	 Duvall UGA	 Duvall
+159	146	 Granite Falls UGA	 Granite Falls
+35	37	 Hunts Point	 Medina
+147	145	 Index	 Gold Bar
+51	7	 Issaquah PAA	 Issaquah
+209	64	 King no growth UGA Tukwila PAA	 King Rural
+302	76	 Kitsap Rural Ag and Resource	 Kitsap Rural
+163	166	 Maltby UGA	 Monroe UGA
+164	136	 Marysville UGA	 Marysville
+167	140	 Mountlake Terrace MUGA	 Mountlake Terrace
+1141	141	 Mukilteo	 Mukilteo
+404	125	 Naval Station Everett	 Everett
+401	65	 NBK Bremerton	 Bremerton
+57	19	 Newcastle PAA	 Newcastle
+95	41	 Pacific	 Pacific
+168	141	 Paine Field Area	 Mukilteo
+1074	74	 Poulsbo PUTA	 Poulsbo PUTA
+43	30	 Skykomish	 Carnation
+172	151	 Stanwood UGA	 Stanwood
+174	152	 Sultan UGA	 Sultan
+175	153	 Woodway MUGA	 Woodway
+45	37	 Yarrow Point	 Medina
