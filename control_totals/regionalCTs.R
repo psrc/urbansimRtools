@@ -6,7 +6,7 @@
 ## Results are written into csv files and optionally to a mysql DB.
 ## 
 ## Mike Jensen & Hana Sevcikova, PSRC 
-## 2022-12-05
+## 2023-04-11
 
 library(dplyr)
 library(srvyr)
@@ -31,12 +31,14 @@ get.forecast.from.elmer <- FALSE # if FALSE, the forecast is retrieved from a fi
 # the file is used only if get.forecast.from.elmer is FALSE
 #forecast.file.name <- "J:/Projects/UrbanSim/NEW_DIRECTORY/Inputs/annual_control_totals/controls_from_2017_macro_forecast/Working_Update_annual_hh_control_totals_2018_forecasts_2018_BY.xlsx"
 #forecast.file.name <- "~/psrc/control_totals/Working_Update_annual_hh_control_totals_2018_forecasts_2018_BY.xlsx"
-forecast.file.name <- "~/psrc/R/urbansimRtools/control_totals/LUVit_ct_by_tod_generator_90-90-90_2022-11-22.xlsx"
+#forecast.file.name <- "~/psrc/R/urbansimRtools/control_totals/LUVit_ct_by_tod_generator_90-90-90_2022-11-22.xlsx"
+forecast.file.name <- '~/psrc/R/urbansimRtools/control_totals/LUVit_ct_by_tod_generator_90-90-90_2023-01-11.xlsx'
+
 # if the forecast the regional macroeconomic forecast  
 is.forecast.ref <- FALSE # if FALSE it is assumed it comes from a version of unrolled control totals
 
 # what should be done for jobs CTs (currently only scaling implemented)
-create.emp.totals <- TRUE # if FALSE only HHs CTs are created
+create.emp.totals <- FALSE # if FALSE only HHs CTs are created
 scale.emp.controls <- TRUE # if FALSE the totals from the table below are simply copied; otherwise they are scaled to forecast
 emp.ct.table <- "psrc_2014_parcel_baseyear_just_friends.annual_employment_control_totals_lum_sector"
 
@@ -45,6 +47,7 @@ output.file.name.hh <- paste0("regional_annual_household_control_totals-", Sys.D
 output.file.name.emp <- paste0("regional_annual_employment_control_totals-", Sys.Date(), ".csv")
 output.ct.db <- "sandbox_hana" # if not NULL, output is also written into mysql DB
 #output.ct.db <- base.db
+#output.ct.db <- NULL
 overwrite.existing.in.db <- FALSE # should mysql tables be overwritten (only used if output.ct.db is not NULL)  
   
 # Functions ---------------------------------------------------------
@@ -69,7 +72,8 @@ hhpop.control <- function(op.year, ref.year){
 
 # Rebalance to match aggregated control totals
 # by sampling proportionally to HH count
-rebalance <- function() {
+rebalance.hhs <- function() {
+  orig.CTpop <- copy(CTpph)
   while(TRUE) {
     aggr <- CTpph[, .(tot=sum(household_count)), by=.(year)]
     aggr[forecast, should_be:=i.household_count, on=.(year)]
@@ -79,12 +83,41 @@ rebalance <- function() {
     if(nrow(difs) == 0) break
     for (i in 1:nrow(difs)) {
       d <- difs[i, dif]
-      sct <- CTpph[year == difs[i, year]]
+      sct <- CTpph[year == difs[i, year] & pph < 7]
       sampl <- sample(sct$pph, min(abs(d), sum(sct$household_count > 0)), prob = sct$household_count)
       idx <- which(CTpph$year == difs[i, year] & CTpph$pph %in% sampl)
       CTpph[idx, household_count := household_count + sign(d)] # subtracts if d is negative, otherwise adds
     }
   }
+  orig.CTpop[CTpph, new_household_count := i.household_count, on = c("year", "pph")]
+  cat("\nRebalancing HHs: ", orig.CTpop[new_household_count > household_count, sum(new_household_count - household_count)], 
+      " households added; ", orig.CTpop[new_household_count < household_count, sum(household_count - new_household_count)], 
+      " households subtracted")
+  return(orig.CTpop[new_household_count > household_count, sum(new_household_count - household_count)])
+}
+
+# Rebalance to match aggregated control totals
+# of population by subtracting the difference from the highest (7+) PPH category 
+rebalance.pop <- function() {
+  orig.CTpop <- copy(CTpph)
+  aggr <- CTpph[, .(tot = sum(hhpop)), by = .(year)]
+  aggr[CTpph[pph == 7, .(mean_pph = mean(mean_pph)), by = .(year)], mean_pph := i.mean_pph, on = "year"]
+  aggr[forecast, should_be := i.hh_pop, on = "year"]
+  aggr <- aggr[!is.na(should_be)]
+  aggr[, dif := should_be - tot]
+  difs <- aggr[dif < 0] # process only records where we are overestimating population 
+  #if(iteration == 2) stop("")
+  for (i in 1:nrow(difs)) {
+    dhhs7 <- abs(difs[i, dif]/difs[i, mean_pph])
+    idx <- which(CTpph$year == difs[i, year] & CTpph$pph == 7)
+    CTpph[idx, household_count := max(0, household_count - floor(dhhs7))]
+  }
+  orig.CTpop[CTpph, `:=`(new_household_count = i.household_count, 
+                         new_hhpop = i.household_count * mean_pph), on = c("year", "pph")]
+  
+  cat("\nRebalancing HHPop: ", orig.CTpop[new_household_count < household_count, sum(household_count - new_household_count)], 
+      " households and ", orig.CTpop[new_household_count < household_count, sum(hhpop - new_hhpop)], 
+      " persons subtracted")
 }
 
 mysql.connection <- function(dbname = "2018_parcel_baseyear") {
@@ -141,7 +174,7 @@ if(get.data.from.rda){
                      "ELSE '", income.labels[1], "' END")
     
     hhs_sql <- paste("SELECT", base_year, "AS year,", prsn_sql, "AS pph,", 
-                     wrkr_sql, "AS workers,", inc_sql, "as income, count(*) AS count", 
+                     wrkr_sql, "AS workers,", inc_sql, "as income, count(*) AS count, avg(h.persons) as mean_pph", 
                      "FROM", base.db,".households", "AS h",
                      "GROUP BY", prsn_sql, ",",  wrkr_sql, ",", inc_sql)
     
@@ -200,8 +233,10 @@ hhs_full[, income := trimws(income)]
 
 CTpph <- data.table(expand.grid(year = sort(unique(forecast$year)), pph = 1:7))                    # create all combinations of year and pph
 
-CTpph[hhs_full[, .(count = sum(count)), by = .(year, pph)], household_count := i.count, on = .(year, pph)]                                     # merge base year hh counts with CTpph 
+CTpph[hhs_full[, .(count = sum(count)), by = .(year, pph)], 
+      `:=`(household_count = i.count), on = .(year, pph)]                                  # merge base year hh counts with CTpph 
 CTpph[is.na(household_count), household_count := 1]
+CTpph[hhs_full[, .(mean_pph = mean(mean_pph)), by = .(pph)], mean_pph := i.mean_pph, on = .(pph)] 
 CTpph[, hhsize := ifelse(pph < 3, "small", "large")]
 
 years <- unique(CTpph$year)
@@ -210,9 +245,18 @@ for(i in 2:length(years)) {                                                     
   CTpph[upd, household_count := i.household_count, on = c("year", "pph")]
 }
 CTpph[, hhsize := NULL]
+CTpph[, hhpop := household_count * mean_pph]
 
-rebalance()                                                                                        # Rebalance to handle any deviation from aggregate control
-
+# Rebalance to handle any deviation from aggregate control
+for(i in 1:20){
+  cat("\n\nIteration: ", i, "\n==================")
+  #iteration <- i
+  rebalance.pop()
+  CTpph[, hhpop := household_count * mean_pph]
+  hhadded <- rebalance.hhs()
+  CTpph[, hhpop := household_count * mean_pph]
+  if(hhadded < 10) break
+}
 
 # 2. Workers and Income brackets ------------------------------------
 
