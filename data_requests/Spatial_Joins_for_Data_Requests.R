@@ -1,4 +1,3 @@
-
 # Script to do spatial joins for data requests - user directs path to custom geography shapefile and it joins to LUV-it parcel points_joined
 # Still a big work in progress
 # Mark Simonson 1-2-24
@@ -11,7 +10,9 @@
 ## https://cengel.github.io/R-spatial/spatialops.html.  For CRS, need it in proj4 format
 ## https://github.com/psrc/luv/blob/master/LUVit/assemble.R  Examples for adding sheets to Excel workbook and export
 ## https://uw-madison-datascience.github.io/r-raster-vector-geospatial/08-vector-plot-shapefiles-custom-legend/index.html plotting
-
+## https://psrc.github.io/intro-leaflet/  # Craigs lessons from 2021
+## https://learn.r-journalism.com/en/mapping/leaflet_maps/leaflet/
+## https://rstudio.github.io/leaflet/colors.html ## Coloring the leaflet circles by sa_id
 
 library(sf)
 library(leaflet)
@@ -21,8 +22,11 @@ library(data.table)
 library(tmap)
 library(openxlsx2)
 library(RColorBrewer)
+library(wesanderson)
 
 ## Standard Inputs - don't need to change
+
+## Hana:  Use file.path to set a directory and use that instead of having to change multiple times
 
 luvit_parcel_points <- read_sf(dsn = "J:/Projects/LandUseVision/LUV.3/Data_Requests/Core_GIS_shapefiles", layer ="luvit_parcels")
 sourcedir_flat_indicators <- "J:/Projects/LandUseVision/LUV.3/Data_Requests/flattened_parcel_files"
@@ -111,27 +115,49 @@ wb <- wb_add_data(wb,"Summary_by_SA",results_by_sa)
 setwd(sourcedir_request_storage)
 wb$save(output_file_name)
 
+## Convert parcels back to sf compatible file
 dr_parcels_2 <- st_as_sf(dr_parcels)
-
-## Craig uses leaflet
-## 
 
 ggplot() + 
   geom_sf(data = dr_polygons_crs) +
   geom_sf(data = dr_parcels_2, aes(color = sa_id)) 
+## Two different ways of plotting parcels by sa_id across color spectrum for QC
+#  scale_color_gradient(colours = wesanderson::wes_palette("Zissou1", 100, type = "continuous"))
+#  scale_color_gradient(low = "yellow", high = "brown")
 
-ggplot() + 
-  geom_sf(data = dr_polygons_crs) +
-  geom_sf(data = dr_parcels_2, aes(color = sa_id)) + 
-  scale_color_continuous(type = "gradient")
-#  scale_fill_brewer(palette = "Dark2")
+## TODO - move to Leaflet to add OpenStreetMap reference layers
+## Code below this line not working yet
+
+dr_polygons <- dr_polygons %>% 
+  st_transform(4326)
+
+dr_parcels_2 <- dr_parcels_2 %>%
+  st_transform(4326)
+
+pal <- colorFactor(topo.colors(10), dr_parcels_2$sa_id)
 
 
+dr_map <- leaflet() %>% 
+   # addTiles() %>% 
+   addProviderTiles(providers$CartoDB.DarkMatter) %>%
+    addEasyButton(easyButton(
+    icon="fa-globe", title="Region",
+    onClick=JS("function(btn, map){map.setView([47.615,-122.257],8.5); }"))) %>% 
 
-leaflet() %>%
-  addTiles() %>%
-  addMarkers(data = dr_parcels_2)
+  addPolygons(data=dr_polygons,
+              weight = 1,
+              ) %>%   
 
+  addCircles(data=dr_parcels_2,
+             weight = 2,
+             radius = 2,
+             fill = TRUE,
+             opacity = 1,
+             popup = ~sa_id,
+             color = ~pal(sa_id),
+             group = (dr_parcels_2))
+  
+dr_map
 
 
 
