@@ -1,0 +1,165 @@
+library(data.table)
+
+data.dir <- "../data/BY2018"
+# where are the constraints file and the flu file located
+#constr.dir <- "J:\Staff\Christy\usim-baseyear\dev_constraints"
+#flu.dir <- "J:\Staff\Christy\usim-baseyear\flu"
+constr.dir <- "~/psrc/urbansim-baseyear-prep/future_land_use"
+flu.dir <- constr.dir
+    
+# when was the flu file and constraints file created
+flu.date <- "2023-01-10" 
+
+# Load inputs
+#==============
+# load constraints file
+constr <- fread(file.path(constr.dir, paste0("devconstr_v2_", flu.date, ".csv")))
+
+# load the FLU file by plan_type_id and constraints by LC
+flu <- fread(file.path(flu.dir, paste0("flu_imputed_ptid_", flu.date, ".csv")))
+
+# Load some of the 2018 datasets exported from the DB into the data/BY2018 directory
+pcls <- fread(file.path(data.dir, "parcels.csv"))
+job_sqft <- fread(file.path(data.dir, "building_sqft_per_job.csv"))
+bts <- fread(file.path(data.dir, "building_types.csv"))
+
+# load 2023 or 2018 buildings
+bldgs <- fread(file.path(data.dir, "buildings.csv"))
+#bldgs <- fread("~/psrc/urbansim-baseyear-prep/imputation/data2023/buildings_imputed_phase3_lodes_20240226.csv")
+
+# Functions
+#============
+compute.parcel.capacity <- function(pcl, constraints, job.sqft, include.coverage = FALSE) {
+    pclw <- pcl[, .(parcel_id, plan_type_id, parcel_sqft, county_id, city_id, zone_id)]
+    pclw <- merge(pcl, constraints, by = "plan_type_id", allow.cartesian=TRUE)
+    pclw[job.sqft, building_sqft_per_job := i.building_sqft_per_job, on = c("generic_land_use_type_id", "zone_id")]
+    
+    # compute building sqft & residential units
+    if(! "coverage" %in% colnames(pclw) || !include.coverage) pclw[, coverage := 1]
+    if(include.coverage)
+        pclw[, coverage := pmin(0.95, coverage)]
+    
+    pclw[constraint_type == "far", building_sqft := parcel_sqft * maximum * coverage]
+    pclw[constraint_type == "units_per_acre", residential_units := parcel_sqft * maximum / 43560 * coverage]
+    
+    # select one max for residential and one for non-res type, so that each parcel has 2 records at most
+    pclwu <- pclw[pclw[, .I[which.max(maximum)], by = .(parcel_id, constraint_type)]$V1]
+    pclwu[, mixed := .N > 1, by = parcel_id]
+    
+    # add county names
+    pclwu[, county := factor(county_id, levels = c(33, 35, 53, 61), labels = c("King", "Kitsap", "Pierce", "Snohomish"))]
+    return(pclwu)
+}
+
+aggregate.capacity <- function(pcl, by = "county") {
+    res <- NULL
+    
+    # extract non-mix-use residential and non-residential parcels as their capacity will  not change with the ratio
+    pcl_resid <- pcl[mixed==FALSE, .(parcel_id, units = residential_units, 
+                                     remaining_capacity = pmax(0, residential_units - residential_units_built))][, type := "residential-units"][!is.na(units)]
+    pcl_nonresid <- pcl[mixed==FALSE, .(parcel_id, units = building_sqft, remaining_capacity = pmax(0, building_sqft - non_residential_sqft_built), building_sqft_per_job)][, type := "non-residential-sqft"][!is.na(units)]
+    pcl_nonresid_jobs <- pcl_nonresid[, .(parcel_id, remaining_capacity = remaining_capacity/building_sqft_per_job)][, type := "non-residential-jobs"]
+    pcl_nonresid[, building_sqft_per_job := NULL]
+    
+    pcl_non_mix <- merge(unique(pcl[, c("parcel_id", by), with = FALSE]), 
+                         rbind(pcl_resid, 
+                               pcl_nonresid, 
+                               pcl_nonresid_jobs, 
+                        fill = TRUE), by = "parcel_id")
+    
+    # aggregate
+    units_non_mix <- pcl_non_mix[ , .(units = sum(units, na.rm = TRUE), remaining_capacity = sum(remaining_capacity, na.rm = TRUE)), by = c(by, "type")]
+    
+    # construct mix-use
+    for(ratio in c(0, 25, 50, 75, 100)) {
+        pcl_mix_res <- pcl[mixed==TRUE & constraint_type == "units_per_acre", 
+                           .(parcel_id, units = ratio/100 * residential_units, units_built = residential_units_built)][
+                               , `:=`(remaining_capacity = pmax(0, units - units_built), type = "residential-units")][!is.na(units)]
+        pcl_mix_nonres <- pcl[mixed==TRUE & constraint_type == "far", .(parcel_id, units = (100 - ratio)/100 * building_sqft, 
+                                                                        units_built = non_residential_sqft_built, 
+                                                                        building_sqft_per_job)][
+                                                                            ,`:=`(remaining_capacity = pmax(0, units - units_built), 
+                                                                                  type = "non-residential-sqft")][!is.na(units)]
+        pcl_mix_nonres_jobs <- pcl_mix_nonres[, .(parcel_id, remaining_capacity = remaining_capacity/building_sqft_per_job)][, type := "non-residential-jobs"]
+        pcl_mix_nonres[, building_sqft_per_job := NULL]
+        
+        pcl_mix <- merge(unique(pcl[, c("parcel_id", by), with = FALSE]), 
+                         rbind(pcl_mix_res, 
+                               pcl_mix_nonres, 
+                               pcl_mix_nonres_jobs, fill = TRUE), by = "parcel_id")
+        
+        # aggregate
+        units <- pcl_mix[, .(units = sum(units, na.rm = TRUE), #units_built = sum(units_built, na.rm = TRUE),
+                             remaining_capacity = sum(remaining_capacity, na.rm = TRUE)), by = c(by, "type")]
+        #units[type != "non-residential-jobs", remaining_capacity := pmax(0, units - units_built)][, units_built := NULL]
+        
+        # combine with non-mix-use
+        units <- rbind(units, units_non_mix)
+        units <- units[ , .(units = sum(units, na.rm = TRUE), remaining_capacity = sum(remaining_capacity, na.rm = TRUE)), 
+                        by = c(by, "type")]
+        
+        res <- rbind(res, units[, res_ratio := ratio])
+    } # loop end
+    res[, res_ratio := as.factor(res_ratio)]
+    res[, type := factor(type, levels = c("residential-units", "non-residential-sqft", "non-residential-jobs"))]
+    res[, `:=`(remaining_total_capacity = sum(remaining_capacity)), by = c("type", "res_ratio", by[-1])]
+    res[, `:=`(percent_rem_cap = round(remaining_capacity/remaining_total_capacity * 100,1))]
+    setnames(res, "units", "total_capacity")
+    return(res)
+}
+
+# start processing
+#=================
+
+# add generic land use type to the FLU dataset
+flulc <- rbind(flu[Res_Use == "Y", .(plan_type_id, coverage = LC_Res, generic_land_use_type_id = 1)],
+               flu[Res_Use == "Y", .(plan_type_id, coverage = LC_Res, generic_land_use_type_id = 2)],
+               flu[Office_Use == "Y", .(plan_type_id, coverage = LC_Office, generic_land_use_type_id = 3)],
+               flu[Comm_Use == "Y", .(plan_type_id, coverage = LC_Comm, generic_land_use_type_id = 4)],
+               flu[Indust_Use == "Y", .(plan_type_id, coverage = LC_Indust, generic_land_use_type_id = 5)],
+               flu[Mixed_Use == "Y", .(plan_type_id, coverage = LC_Mixed, generic_land_use_type_id = 6)]
+)
+# add the FLU info, including coverage, to the development constraints dataset
+constr[flulc, coverage := i.coverage, on = .(plan_type_id, generic_land_use_type_id)]
+constr[is.na(coverage), coverage := 1] 
+
+# assemble sqft per job
+job_sqft[bts, generic_land_use_type_id := i.generic_building_type_id, on = "building_type_id"]
+job_sqft_mean <- job_sqft[, .(building_sqft_per_job = mean(building_sqft_per_job)), by = .(zone_id, generic_land_use_type_id)]
+# impute sqft per job for mixed use
+jsf_nmu <- job_sqft[generic_land_use_type_id %in% c(3,4,5), .(building_sqft_per_job = mean(building_sqft_per_job)), by = .(zone_id)]
+job_sqft_mean <- rbind(job_sqft_mean, jsf_nmu[, generic_land_use_type_id := 6])
+
+# compute capacity for each parcel
+pclwu <- compute.parcel.capacity(pcls, constr, job_sqft_mean, include.coverage = TRUE)
+
+# get current built
+pclbld <- bldgs[, .(residential_units = sum(residential_units), non_residential_sqft = sum(non_residential_sqft),
+                    building_sqft = sum(residential_units * sqft_per_unit + non_residential_sqft)), by = .(parcel_id)]
+
+# join with parcels' capacity
+pclwu[pclbld, `:=`(residential_units_built = i.residential_units, non_residential_sqft_built = i.non_residential_sqft,
+                   building_sqft_built = i.building_sqft), on = "parcel_id"]
+pclwu[is.na(residential_units_built), residential_units_built := 0]
+pclwu[is.na(non_residential_sqft_built), non_residential_sqft_built := 0]
+pclwu[is.na(building_sqft_built), building_sqft_built := 0]
+
+# aggregate capacity for desired geography, using different residential ratios
+res <- aggregate.capacity(pclwu, by = "growth_center_id")
+
+# join with location info
+gcs <- fread(file.path(data.dir, "growth_centers.csv"))
+res[gcs, name := i.name, on = "growth_center_id"]
+
+
+# plot results
+library(ggplot2)
+g <- ggplot(res[growth_center_id %in% c(531, 515, 521)]) + geom_col(aes(x = type, y = percent_rem_cap, group = res_ratio, fill = res_ratio), position = "dodge") +
+    facet_wrap(vars(name), ncol = 1, scales = "free") + xlab("") + ylab("percent undeveloped capacity")
+print(g)
+
+res2 <- melt(res, id.vars = c("growth_center_id", "name",  "type", "res_ratio"), variable.name = "indicator")
+g1 <- ggplot(res2[growth_center_id %in% c(531, 515, 521) &  indicator %in% c("remaining_capacity", "total_capacity")]) + 
+    geom_col(aes(x = indicator, y = value, group = res_ratio, fill = res_ratio), position = "dodge") +
+    facet_grid(type ~ name, scales = "free") + xlab("") + ylab("capacity")
+print(g1)
