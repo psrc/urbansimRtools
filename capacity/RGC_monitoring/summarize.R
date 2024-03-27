@@ -6,11 +6,11 @@ library(readxl)
 # were are parcels and various Xwalk tables, exported from the base year DB
 data.dir <- "../../data/BY2018"
 
-# Results from the script compute_capacity_from_constraints.R
-capacity.file <- "../RGC_capacity_data_2024-03-27.csv"
+# Results from the script compute_capacity_with_pop.R
+capacity.file <- "RGC_capacity_data_2024-03-27.csv"
 
 # which developable factor and residential ratio we want in the summary 
-# (must be present in the capacity file; if not, rerun compute_capacity_from_constraints.R
+# (must be present in the capacity file; if not, rerun compute_capacity_with_pop.R
 #  with the right settings)
 developable.factor <- 2
 res.ratios <- c(40, 50, 60)
