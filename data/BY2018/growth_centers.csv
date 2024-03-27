@@ -1,0 +1,40 @@
+growth_center_id,city_id,"name",acres
+501,2,"Auburn",234
+601,9,"Ballard-Interbay",971
+503,13,"Bellevue",410
+504,139,"Bothell Canyon Park",719
+505,65,"Bremerton",181
+506,23,"Burien",354
+602,9,"Duwamish",5062
+508,95,"Everett",472
+509,20,"Federal Way",200
+603,0,"Frederickson",2837
+511,7,"Kent",292
+604,7,"Kent MIC",1970
+513,14,"Kirkland Totem Lake",860
+514,79,"Lakewood",538
+515,94,"Lynnwood",764
+605,8,"North Tukwila",961
+606,95,"Paine Field / Boeing Everett",4241
+607,59,"Port of Tacoma",4693
+519,85,"Puyallup Downtown",215
+520,85,"Puyallup South Hill",845
+521,15,"Redmond Downtown",433
+522,15,"Redmond-Overlake",519
+523,12,"Renton",606
+524,4,"SeaTac",885
+525,9,"Seattle Downtown",934
+526,9,"Seattle First Hill/Capitol Hill",915
+527,9,"Seattle Northgate",409
+528,9,"Seattle South Lake Union",359
+529,9,"Seattle University Community",767
+530,9,"Seattle Uptown",335
+531,70,"Silverdale",1002
+608,65,"South Kitsap Industrial Area",3565
+533,59,"Tacoma Downtown",2160
+534,59,"Tacoma Mall",1378
+535,8,"Tukwila",485
+536,22,"Issaquah RGC",464
+537,80,"University Place RGC",847
+609,0,"Sumner Pacific",2452
+610,0,"Cascade",4076
