@@ -19,7 +19,7 @@ flu.date <- "2023-01-10"
 developable.factors <- c(1,2,3)
 
 # which residential ratios should be used for mix-use
-res.ratios <- c(30, 40, 50, 60, 70)
+res.ratios <- c(20, 30, 40, 50, 60, 70, 80)
 
 # vacancy
 res.vacancy.rate <- 0.05
@@ -243,8 +243,9 @@ aggregate.capacity <- function(pcl, by = "county", developable.factor = 1) {
                                           "activity-units", "residential-pop", "non-residential-jobs"))]
     res[, `:=`(remaining_total_capacity = sum(remaining_capacity)), by = c("type", "res_ratio", by[-1])]
     res[, `:=`(percent_rem_cap = round(remaining_capacity/remaining_total_capacity * 100,1))]
-    setnames(res, "units", "total_capacity")
+    setnames(res, "units", "maximum_capacity")
     setnames(res, "units_dev", "total_developable_capacity")
+    setnames(res, "remaining_capacity", "net_developable_capacity")
     return(res)
 }
 
@@ -353,28 +354,29 @@ print(g)
 
 res2 <- melt(res, id.vars = c("growth_center_id", "name",  "type", "res_ratio", "class"), variable.name = "indicator")
 
-g1 <- ggplot(res2[growth_center_id %in% c(531, 515, 521) &  indicator %in% c("remaining_capacity", "total_capacity")]) + 
+g1 <- ggplot(res2[growth_center_id %in% c(531, 515, 521) &  indicator %in% c("net_developable_capacity", "maximum_capacity")]) + 
     geom_col(aes(x = indicator, y = value, group = res_ratio, fill = res_ratio), position = "dodge") +
     facet_grid(type ~ name, scales = "free") + xlab("") + ylab("capacity")
 print(g1)
 
-reseb <- res2[growth_center_id > 0 &  indicator %in% c("remaining_capacity", "total_capacity", "total_developable_capacity")]#[type == "non-residential-jobs" & indicator == "total_capacity", value := NA]
-reseb <- dcast(reseb, name + type + indicator ~ res_ratio, value.var = "value")
-#reseb[type == "non-residential-jobs" & indicator == "total_capacity", value := NA]
+reseb <- res2[growth_center_id > 0 &  indicator %in% c("net_developable_capacity", "maximum_capacity", "total_developable_capacity")]#[type == "non-residential-jobs" & indicator == "total_capacity", value := NA]
+reseb <- dcast(reseb, name + class + type + indicator ~ res_ratio, value.var = "value")
+#reseb[type == "non-residential-jobs" & indicator == "maximum_capacity", value := NA]
 
 reseb <- reseb[type %in% c("activity-units", "residential-pop", "non-residential-jobs")]
-reseb[indicator == "remaining_capacity", indicator := "net_capacity"]
 
 gall <- ggplot(reseb, aes(x = name, group = indicator, color = indicator)) + 
     geom_errorbar(aes(ymin = `40`, ymax = `60`), position = position_dodge(width=0.3), na.rm = TRUE)  + 
-    geom_point(aes(y = `50`), na.rm = TRUE, position = position_dodge(width=0.3)) +
-    facet_grid(type ~ . , scales = "free") + xlab("") + ylab("") +
+    geom_point(aes(y = `50`), na.rm = TRUE, position = position_dodge(width=0.3)) + xlab("") + ylab("") +
+    facet_grid(type ~ class , scales = "free") + 
+    #ggh4x::facet_grid2(type ~ class , scales = "free", independent = "y") + 
     guides(x =  guide_axis(angle = 90)) + scale_y_continuous(labels = scales::label_comma())
     #theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
 
 print(gall)
 
-pdf(file = paste0("RGC_capacity_40_60ranges_devfac_", developable.factor, file.suffix, "_", Sys.Date(), ".pdf"), 
+pdf(file = paste0("RGC_capacity_40_60ranges_devfac_", developable.factor, file.suffix, "_", #"_indepscale_", 
+                  Sys.Date(), ".pdf"), 
     width = 12, height = 10)
 print(gall)
 dev.off()

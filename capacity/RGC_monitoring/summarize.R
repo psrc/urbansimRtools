@@ -7,17 +7,17 @@ library(readxl)
 data.dir <- "../../data/BY2018"
 
 # input/output file suffix
-#file.suffix <- ""
-file.suffix <- "_23on18"
+file.suffix <- ""
+#file.suffix <- "_23on18"
 
 # Results from the script compute_capacity_with_pop.R
-capacity.file <- paste0("RGC_capacity_data", file.suffix, "_2024-04-24.csv")
+capacity.file <- paste0("RGC_capacity_data", file.suffix, "_2024-04-29.csv")
 
 # which developable factor and residential ratio we want in the summary 
 # (must be present in the capacity file; if not, rerun compute_capacity_with_pop.R
 #  with the right settings)
 developable.factors <- c(2, 3)
-res.ratios <- c(40, 50, 60)
+res.ratios <- c(20, 30, 40, 50, 60, 70, 80)
 
 
 # Load data
@@ -63,16 +63,16 @@ for(developable.factor in developable.factors){
     # add county_id to capacity50 and aggregate
     capacity50 <- merge(capacity50, county_x_rgc, by = c("growth_center_id", "class"))
     #capacity50[growth_center_id == 0, `:=`(county_id = 0, county = "Region")]
-    aggr.cap <- capacity50[, .(total_capacity = sum(total_capacity), 
+    aggr.cap <- capacity50[, .(maximum_capacity = sum(maximum_capacity), 
                                total_developable_capacity = sum(total_developable_capacity), 
-                               remaining_capacity = sum(remaining_capacity)), 
+                               net_developable_capacity = sum(net_developable_capacity)), 
                            by = .(county_id, county, class, type)]
-    aggr.cap.tot <- dcast(aggr.cap, county_id + county + class ~ type, value.var = "total_capacity")
-    colnames(aggr.cap.tot)[4:ncol(aggr.cap.tot)] <- paste0("totcap-", colnames(aggr.cap.tot)[4:ncol(aggr.cap.tot)])
+    aggr.cap.tot <- dcast(aggr.cap, county_id + county + class ~ type, value.var = "maximum_capacity")
+    colnames(aggr.cap.tot)[4:ncol(aggr.cap.tot)] <- paste0("maxcap-", colnames(aggr.cap.tot)[4:ncol(aggr.cap.tot)])
     aggr.cap.totdev <- dcast(aggr.cap, county_id + county + class ~ type, value.var = "total_developable_capacity")
     colnames(aggr.cap.totdev)[4:ncol(aggr.cap.totdev)] <- paste0("totdevcap-", colnames(aggr.cap.totdev)[4:ncol(aggr.cap.totdev)])
-    aggr.cap.net <- dcast(aggr.cap, county_id + county + class ~ type, value.var = "remaining_capacity")
-    colnames(aggr.cap.net)[4:ncol(aggr.cap.net)] <- paste0("netcap-", colnames(aggr.cap.net)[4:ncol(aggr.cap.net)])
+    aggr.cap.net <- dcast(aggr.cap, county_id + county + class ~ type, value.var = "net_developable_capacity")
+    colnames(aggr.cap.net)[4:ncol(aggr.cap.net)] <- paste0("netdevcap-", colnames(aggr.cap.net)[4:ncol(aggr.cap.net)])
     
     aggrw <- merge(aggr.size, merge(merge(aggr.cap.tot, aggr.cap.totdev, by = c("county_id", "county", "class")),
                                     aggr.cap.net,  by = c("county_id", "county", "class")), by = c("county_id", "class"))
