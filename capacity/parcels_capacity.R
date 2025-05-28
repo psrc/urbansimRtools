@@ -1,7 +1,27 @@
 ##################################################
 # Script for computing capacity for each parcel. 
 # It uses a set of proposals from an unlimited run.
-# Hana Sevcikova, PSRC, updated on 2023-01-11
+# Hana Sevcikova, PSRC, updated on 2025-05-06
+##################################################
+
+##################################################
+# To export necessary dataset from an Opus unlimited run, do the following,
+# assuming the run is called run_XX (the commands are given for Unix-based systems):
+# 
+# cd run_XX # go into the run directory
+# mkdir csv # create a 'csv' directory
+# cd csv    # go into the csv directory
+# mkdir 2023 # create directories for the individual years
+# mkdir 2024
+#
+### now export base year datasets (run the following line for datasets
+### buildings, parcels, development_constraints, development_templates,
+### development_template_components, building_sqft_per_job)
+# python -m opus_core.tools.convert_table flt csv -d ../2023 --no-type-info -o 2023 -t buildings
+#
+### now export run results into 2024 (run the following line for datasets
+### development_project_proposals, development_project_proposal_components)
+# python -m opus_core.tools.convert_table flt csv -d ../2024 --no-type-info -o 2024 -t development_project_proposals
 ##################################################
 
 library(data.table)
@@ -18,24 +38,30 @@ save <- TRUE
 # sampling share of residential projects on mix-use parcels
 res.ratio <- 50
 
+# determine proposals for mix-use parcels by sampling parcels
+# (if FALSE, the res-ratio is applied to units)
+mu.sampling <- FALSE
+
 # prefix of the output file name
-file.prefix <- paste0("CapacityPcl_res", res.ratio, "-", Sys.Date())
+#file.prefix <- paste0("CapacityPcl_res", res.ratio, "-", Sys.Date())
+#file.prefix <- paste0("CapacityPcl_res", res.ratio, "-", Sys.Date(), "_hb1110")
+#file.prefix <- paste0("CapacityPclNoSampling_res", res.ratio, "-", Sys.Date())
+file.prefix <- paste0("CapacityPclNoSampling_res", res.ratio, "-", Sys.Date(), "_hb1110")
 
 # Where are csv tables with the full set of proposals and components 
 # (ideally from an unlimited urbansim run)
-#prop.path <- "J:/Projects/Parcel\ Data/Capacity/unlimited-run-142"
-#prop.path <- "/Volumes/DataTeam/Projects/Parcel\ Data/Capacity/unlimited-run-142"
+prop.path <- "~/opus/urbansim_data/data/psrc_parcel/runs/run_35.2025_05_21_09_54_unlimited_hb1110/csv/2024"
+#prop.path <- "~/opus/urbansim_data/data/psrc_parcel/runs/run_24.2025_05_13_17_21_unlimited_2x/csv/2024"
+#prop.path <- "~/opus/urbansim_data/data/psrc_parcel/runs/run_23.2025_05_06_09_55_unlimited_3x/csv/2024"
 #prop.path <- "~/n$/vision2050/opusgit/urbansim_data/data/psrc_parcel/runs/awsmodel01/run_71.run_2022_09_23_14_26/csv/2019"
-prop.path <- "~/AWS1E/opusgit/urbansim_data/data/psrc_parcel/runs/run_72.run_2023_01_10_21_14/csv/2019"
-
+#prop.path <- "~/AWS1E/opusgit/urbansim_data/data/psrc_parcel/runs/run_72.run_2023_01_10_21_14/csv/2019"
 
 # Where are csv lookup tables 
 # (base year buildings & parcels, building_sqft_per_job,
 # development_constraints, development_templates & components)
-#lookup.path <- "J:/Projects/Parcel\ Data/Capacity/lookup-2018-10-01"
-#lookup.path <- "/Volumes/DataTeam/Projects/Parcel\ Data/Capacity/lookup-2018-10-01"
+lookup.path <- "~/opus/urbansim_data/data/psrc_parcel/runs/run_24.2025_05_13_17_21_unlimited_2x/csv/2023"
 #lookup.path <- "~/n$/vision2050/opusgit/urbansim_data/data/psrc_parcel/runs/awsmodel01/run_71.run_2022_09_23_14_26/csv/2018"
-lookup.path <- "~/AWS1E/opusgit/urbansim_data/data/psrc_parcel/runs/run_72.run_2023_01_10_21_14/csv/2018"
+#lookup.path <- "~/AWS1E/opusgit/urbansim_data/data/psrc_parcel/runs/run_72.run_2023_01_10_21_14/csv/2018"
 
 rng.seed <- 1 # make it reproducible
 ####### End users settings
@@ -104,7 +130,7 @@ propc[, has_res := any(building_type_id %in% c(19,4,12)), by = proposal_id]
 propc <- subset(propc, is.na(pcl_bldsqft) | 
                   (units_proposed_orig > pcl_resunits & density_type == "units_per_acre") | 
                   (units_proposed_orig > pcl_nonres_sqft & density_type == "far"))
-propc <- subset(propc, status_id != 44)
+#propc <- subset(propc, status_id != 44)
 
 # split parcels by type (res, non-res, mix-use)
 pcl.type <- propc[,.(is_res = sum(has_non_res) == 0, is_non_res = sum(has_res) == 0,
@@ -163,24 +189,48 @@ res_units_mix_max <- res_units_mix[, .SD[which.max(residential_units)], by = par
 non_res_mix_max <- non_res_mix[, .SD[which.max(non_residential_sqft)], by = parcel_id]
 
 # combine MU max proposals into one dataset
-comb_mix_max <- merge(res_units_mix_max[, .(parcel_id, proposal_id)], 
-                      non_res_mix_max[, .(parcel_id, proposal_id)], 
+comb_mix_max <- merge(res_units_mix_max[, .(parcel_id, proposal_id, has_both_comp)], 
+                      non_res_mix_max[, .(parcel_id, proposal_id, has_both_comp)], 
                       all = TRUE, by = "parcel_id")
-# determine which proposal to take for each parcel; sample if not unique
+# determine which proposal to take for each parcel
 comb_mix_max[proposal_id.x == proposal_id.y | is.na(proposal_id.y), proposal_id := proposal_id.x]
-comb_mix_max[is.na(proposal_id.x), proposal_id := proposal_id.y]  
-sampled.props <- apply(comb_mix_max[is.na(proposal_id), .(proposal_id.x, proposal_id.y)], 1, 
+comb_mix_max[is.na(proposal_id.x), proposal_id := proposal_id.y] 
+if(mu.sampling){
+    # sample if not unique
+    sampled.props <- apply(comb_mix_max[is.na(proposal_id), .(proposal_id.x, proposal_id.y)], 1, 
                        function(x) sample(x, 1, prob = c(res.ratio, 100 - res.ratio)))
-comb_mix_max[is.na(proposal_id), proposal_id := sampled.props]
-comb_mix_max[, `:=`(proposal_id.x = NULL, proposal_id.y = NULL)]
-
+    comb_mix_max[is.na(proposal_id), proposal_id := sampled.props]
+}
 # fill sampled proposals with data
 comb_mix_max[res_units_mix, `:=`(residential_units_prop = i.residential_units, building_sqft_prop = i.building_sqft), 
-			    				  on = c("parcel_id", "proposal_id")]
-comb_mix_max[non_res_mix, `:=`(non_residential_sqft_prop = i.non_residential_sqft, 
-			  	                      building_sqft.y = i.building_sqft, 
-                                job_capacity_prop = i.job_capacity), 
              on = c("parcel_id", "proposal_id")]
+comb_mix_max[non_res_mix, `:=`(non_residential_sqft_prop = i.non_residential_sqft, 
+                               building_sqft.y = i.building_sqft, 
+                               job_capacity_prop = i.job_capacity), 
+             on = c("parcel_id", "proposal_id")]
+
+if(!mu.sampling){
+    rest_comb <- comb_mix_max[is.na(proposal_id)] # records to process (have different proposals for res and non-res)
+    # get the corresponding units
+    rest_comb[res_units_mix, `:=`(residential_units_prop = i.residential_units, building_sqft_prop = i.building_sqft), 
+                 on = c(parcel_id = "parcel_id", proposal_id.x = "proposal_id")]
+    rest_comb[non_res_mix, `:=`(non_residential_sqft_prop = i.non_residential_sqft, 
+                                   building_sqft.y = i.building_sqft, 
+                                   job_capacity_prop = i.job_capacity), 
+                 on = c(parcel_id = "parcel_id", proposal_id.y = "proposal_id")]
+    # for cases where there are just proposals with one component, take the corresponding ratio of the units,
+    # otherwise leave as it is (since we would be leaving out the other component)
+    comb_mix_max[rest_comb, 
+                 `:=`(proposal_id = 0,
+                      residential_units_prop = ifelse(has_both_comp.x, i.residential_units_prop,  res.ratio/100 * i.residential_units_prop),
+                      building_sqft_prop = ifelse(has_both_comp.x, i.building_sqft_prop, res.ratio/100 * i.building_sqft_prop),
+                      non_residential_sqft_prop = ifelse(has_both_comp.y, i.non_residential_sqft_prop, (1 - res.ratio/100) * i.non_residential_sqft_prop),
+                      building_sqft.y = ifelse(has_both_comp.y, i.building_sqft.y, (1 - res.ratio/100) * i.building_sqft.y),
+                      job_capacity_prop = ifelse(has_both_comp.y, i.job_capacity_prop, (1 - res.ratio/100) * i.job_capacity_prop)),
+                 on = "parcel_id"]
+}
+comb_mix_max[, `:=`(proposal_id.x = NULL, proposal_id.y = NULL, has_both_comp.x = NULL, has_both_comp.y = NULL)]
+
 
 # parcels with no res component
 comb_mix_max[is.na(building_sqft_prop), building_sqft_prop := 0] 
@@ -195,7 +245,7 @@ comb_mix_max[, building_sqft.y := NULL]
 comb_mix_max[, proposal_id := NULL]
 
 # combine all three parts together (res, non-res & MU)
-comb_max <- rbind(res_units_max, non_res_max, comb_mix_max)
+comb_max <- rbind(res_units_max, non_res_max, comb_mix_max) 
 setkey(comb_max, parcel_id)
 
 # combine proposals and existing stock into one dataset
@@ -217,7 +267,8 @@ all.pcls[, `:=`(DUcapacity = ifelse(is.na(residential_units_prop), DUbase,
                 )]
 respcl <- all.pcls[, .(parcel_id, DUbase, DUcapacity, NRSQFbase, NRSQFcapacity, 
                        JOBSPbase, JOBSPcapacity, BLSQFbase, BLSQFcapacity)]
-respcl <- merge(pcl[, .(parcel_id, control_id, tod_id)], respcl, by = "parcel_id")
+respcl <- merge(pcl[, .(parcel_id, control_id, tod_id, subreg_id, hb_hct_buffer, hb_tier)], 
+                respcl, by = "parcel_id")
 
 # output results
 if(save)
