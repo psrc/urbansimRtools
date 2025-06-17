@@ -33,9 +33,14 @@ CT.file <- 'inputs/Control-Totals-RTP26-2025-06-11.xlsx' # BY 2023
 #capacity.file <- '~/psrc/R/urbansimRtools/capacity/CapacityPcl_res50-2023-01-11.csv' # BY 2018
 capacity.file <- '~/psrc/R/urbansimRtools/capacity/CapacityPclNoSampling_res50-2025-06-03.csv' # BY 2023
 #capacity.file <- '~/psrc/R/urbansimRtools/capacity/CapacityPclNoSampling_res50-2025-06-09_hb1110.csv' # BY 2023 with HB1110
-    
-save.results <- FALSE      # should results be stored in an Excel file
+  
+output.dir <- "outputs"
+output.suffix <- paste0("-", Sys.Date())  # uniquely identify results from this split  
+#output.suffix <- paste0("_hb1110-", Sys.Date()) 
+save.results <- TRUE      # should results be stored in an Excel file
+results.file.name.prefix <- file.path(output.dir, paste0("LUVit_ct_by_tod_generator", output.suffix))  # only used if save.results is TRUE
 do.plot <- TRUE           # should plots be created
+
 base.year <- 2023
 base.year.in.targets <- base.year # from which base year to start in the targets file (for BY 2018 this should be 2020)
 target.year <- 2050       # what is the target year in the targets file    
@@ -56,14 +61,17 @@ scenarios <- list(list(HH = c(10, 10, 10), Emp = c(10, 10, 10), HHPop = NA)#,
 
 step <- c(1, 0.5, 0.25) # increments for scaling the iterative increase for RGs 1, 2, 3 (i.e. RG=1 grows the fastest)
 
-use.mysql <- FALSE # if FALSE, base data are taken from base.data.file. 
+use.mysql <- FALSE  # if FALSE, base data are taken from base.data.file. 
                    # Set this to TRUE if run for the first time or if there is change in the DB.
 base.db <- paste0(base.year, "_parcel_baseyear") # used if use.mysql is TRUE
 
 save.base.data <- TRUE # should the base data pulled from mysql be saved. 
                         # Set this to TRUE if use.mysql is TRUE. It allows to 
                         # skip the mysql step next time around. 
-base.data.file <- paste0("base_data_shares_", base.year, ".rda") # where to store or load from the base data
+base.data.file <- file.path("inputs", paste0("base_data_shares_", base.year, ".rda")) # where to store or load from the base data
+
+if((save.results || do.plot) && !dir.exists(output.dir))
+    dir.create(output.dir, recursive = TRUE)
 
 ## Functions
 ###############
@@ -119,6 +127,7 @@ geo.cap <- pcl.cap[, lapply(.SD, sum), by = c("split_geo_id", "nosplit_geo_id"),
 # read base year HH, HHPop and jobs data from the DB
 if(use.mysql) {
     mydb <- mysql.connection(base.db)
+    cat("\nLoading households from mysql and merging them with buildings and parcels")
     qr <- dbSendQuery(mydb, paste0("select  t3.", geo.name.nosplit, ", t3.", geo.name.split, ", 
                                    count(t1.household_id) as households, sum(persons) as persons from households as t1",
                                " join buildings as t2 on t1.building_id=t2.building_id join ", base.db, 
@@ -128,6 +137,7 @@ if(use.mysql) {
     dbClearResult(qr)
     setnames(hh_base, c(geo.name.split, geo.name.nosplit), c("split_geo_id", "nosplit_geo_id"))
 
+    cat("\nLoading jobs from mysql and merging them with buildings and parcels")
     qr <- dbSendQuery(mydb, paste0("select  t3.", geo.name.nosplit, ", t3.", geo.name.split,
                                    ", count(t1.job_id) as jobs from jobs as t1",
                                " join buildings as t2 on t1.building_id=t2.building_id join ", base.db, 
@@ -139,6 +149,7 @@ if(use.mysql) {
 
     base.data <- merge(hh_base, job_base, by = c("split_geo_id", "nosplit_geo_id"), all = TRUE)
 
+    cat("\nLoading Xwalk tables")
     qr <- dbSendQuery(mydb, "select * from controls")
     geos <- unique(data.table(fetch(qr, n = -1)))
     dbClearResult(qr)
@@ -158,6 +169,8 @@ if(use.mysql) {
         base.data[is.na(base.data[[col]]), (col) := 0]
     if(save.base.data)
         saveRDS(base.data, file = base.data.file)
+    cat("\nClosing mysql connection.\n")
+    dbDisconnect(mydb)
 } else {
     base.data <- readRDS(base.data.file)
 }
@@ -213,7 +226,7 @@ for(min.share in scenarios) { #  iterate over scenarios of growth limits
     file.suffix <- paste(100-min.share[["HH"]], collapse = "-") # suffix for file names (plots and Excel)
 
     CTdf <- checks <- todshare <- todshare.sub <- weights <- list()
-    
+    aggr.geo <- c()
     # iterate over indicators
     for(ind in names(targets)){
         cat("\n\nProcessing ", ind)
@@ -420,6 +433,9 @@ for(min.share in scenarios) { #  iterate over scenarios of growth limits
         checks[[ind]] <- copy(todshare.bytod)
         CTdf[[ind]] <- copy(df)
     }
+    # TODO: If aggregation is on, it might generate records with subreg_id being NA. Need to debug it.
+    # Originally it was written for the case that the control_hcts get aggregate and re-enumerated,
+    # but now with using fixed control_hct_id it doesn't work.
     
     # assemble results
     hhres <- CTdf[["HH"]][, .(subreg_id = split_geo_id, nosplit_geo_id, RGid, name, is_tod = as.integer(is_tod), DUtotcapacity = round(totcap),
@@ -472,14 +488,14 @@ for(min.share in scenarios) { #  iterate over scenarios of growth limits
     to.interpolate <- list(HHPop = popres, HH = hhres, Emp = empres)
     CTs <- list(HHwork = hhres, HHPopwork = popres, EMPwork = empres, check = check)
     unrolled <- NULL
-    years.to.fit <- c(seq(base.year.in.targets, 2040, by = 5), 2044, target.year) # desired years
-
+    years.to.fit <- unique(c(base.year, base.year.in.targets, seq(2020, 2040, by = 5), 2044, target.year)) # desired years
+    years.to.fit <- sort(years.to.fit[years.to.fit >= base.year])
     for (indicator in names(to.interpolate)) {
         if(is.null(to.interpolate[[indicator]])) next
         CTs[[indicator]] <- interpolate.controls.with.ankers(to.interpolate[[indicator]], indicator, 
                                                              anker.years = c(base.year.in.targets, target.year),
                                                              years.to.fit = years.to.fit, id.col = geo.name.split)
-        this.unrolled <- unroll(CTs[[indicator]], indicator, new.id.col = geo.name)
+        this.unrolled <- unroll(CTs[[indicator]], indicator, new.id.col = geo.name.split)
         unrolled <- if(is.null(unrolled)) this.unrolled else merge(unrolled, this.unrolled, all = TRUE)
     }
     CTs[["unrolled"]] <- unrolled
@@ -495,15 +511,15 @@ for(min.share in scenarios) { #  iterate over scenarios of growth limits
         regCT <- tmpdf[, lapply(.SD, sum), .SDcols = paste0("V", years)][, subreg_id := -1]
         setnames(regCT, paste0("V", years), paste0(indicator, years))
         regCTintp <- interpolate.controls.with.ankers(regCT, indicator, anker.years = years,
-                                                             years.to.fit = years.to.fit, id.col = geo.name)
-        this.unrolled <- unroll(regCTintp, indicator, new.id.col = geo.name)
+                                                             years.to.fit = years.to.fit, id.col = geo.name.split)
+        this.unrolled <- unroll(regCTintp, indicator, new.id.col = geo.name.split)
         unrolled.reg <- if(is.null(unrolled.reg)) this.unrolled else merge(unrolled.reg, this.unrolled, all = TRUE)
     }
     CTs[["unrolled regional"]] <- unrolled.reg
     
     # save results into an Excel file
     if(save.results)
-        write.xlsx(CTs, file = paste0("LUVit_ct_by_tod_generator_", file.suffix, "_", Sys.Date(), ".xlsx"))
+        write.xlsx(CTs, file = paste0(results.file.name.prefix, "_", file.suffix, ".xlsx"))
     
     # generate plots
     if(do.plot){
@@ -518,17 +534,17 @@ for(min.share in scenarios) { #  iterate over scenarios of growth limits
             dat[todcap.share == 0 | is.na(target.share), todcap.share := NA]
             dat[RGdf, RG := i.RG, on = "RGid"]
             dat[, RG := factor(RG, levels = RGdf$RG)]
-            g <- ggplot(dat[!is.na(target.share)], aes(x = iter)) + geom_line(aes(y = target.share, col = factor(geo_id))) + 
+            g <- ggplot(dat[!is.na(target.share)], aes(x = iter)) + geom_line(aes(y = target.share, col = factor(nosplit_geo_id))) + 
                 xlab("iteration") + ylab("target TOD share") + facet_wrap(. ~ RG, ncol = 2) 
             g <- g + geom_text(data = dat[!is.na(target.share) & iter == 0], aes(x = iter, y = target.share, label = name, 
-                                                                                 col = factor(geo_id), hjust = 0, vjust = 1.5), size = 2.3) + theme(legend.position="none")
+                                                                                 col = factor(nosplit_geo_id), hjust = 0, vjust = 1.5), size = 2.3) + theme(legend.position="none")
             
-            g2 <- ggplot(dat[!is.na(todcap.share)], aes(x = iter)) + geom_line(aes(y = todcap.share, col = factor(geo_id))) + 
+            g2 <- ggplot(dat[!is.na(todcap.share)], aes(x = iter)) + geom_line(aes(y = todcap.share, col = factor(nosplit_geo_id))) + 
                 xlab("iteration") + ylab("remaining TOD capacity share") + facet_wrap(. ~ RG) 
             g2 <- g2 + geom_text(data = dat[!is.na(todcap.share) & iter == 1], aes(x = iter, y = todcap.share, label = name, 
-                                                                                   col = factor(geo_id), hjust = 0, vjust = 1.5), size = 3) + theme(legend.position="none")
+                                                                                   col = factor(nosplit_geo_id), hjust = 0, vjust = 1.5), size = 3) + theme(legend.position="none")
             
-            pdf(paste0("target_shares_evol_", ind, "_", file.suffix, "_", Sys.Date(), ".pdf"), width = 8, height = 9)
+            pdf(file.path(output.dir, paste0("target_shares_evol_", ind, output.suffix, "_", file.suffix, ".pdf")), width = 8, height = 9)
             print(g)
             print(g2)
             dev.off()
@@ -555,20 +571,20 @@ if(do.plot){
     # bar chart of starting and final shares
     main.bar <- 90
     point.bar <- setdiff(c(95, 90), main.bar)
-    pdf(paste0("hct_final_shares-main-", main.bar, "-", Sys.Date(), ".pdf"), width = 16, height = 8)
+    pdf(file.path(output.dir, paste0("hct_final_shares-main-", main.bar, output.suffix, ".pdf")), width = 16, height = 8)
     for(ind in c("HH", "Emp")){
         datbar <- NULL
         for(share in as.numeric(names(dat.for.bars[[ind]]))){
             datbar <- rbind(datbar, dat.for.bars[[ind]][[as.character(share)]][RGid > -1 & (iter == 0 | iter == max(iter))][, `:=`(max_share = 100-share, max_iter = max(iter))])
         }
-        datbar[name == "Bothell" & geo_id == 126, name := "Bothell (Sno)"]
+        datbar[name == "Bothell" & nosplit_geo_id == 126, name := "Bothell (Sno)"]
         datbar[startsWith(name, "Mid-County"), name := "Uninc. Pierce HCT"]
         sortdat <- datbar[max_share == main.bar & iter == 0]
         sortdat$name <- reorder(sortdat$name, sortdat$target.share, decreasing = TRUE)
         datbar <- datbar[max_share == point.bar & iter == 0, target.share := 0]
         datbar[iter == 0, `:=`(what = "capacity")]
         datbar[iter == max_iter, `:=`(what = paste("max:", max_share))]
-        datbar[datbar[iter == 0], share := ifelse(iter == 0, target.share, target.share - i.target.share), on = c("geo_id", "max_share")]
+        datbar[datbar[iter == 0], share := ifelse(iter == 0, target.share, target.share - i.target.share), on = c("nosplit_geo_id", "max_share")]
         datbar <- datbar[order(share, decreasing = TRUE)]
         datbar[, what := factor(what, levels = c("max: 95", "max: 90", "capacity"))]
         datbar[, name := factor(name, levels = levels(sortdat$name))]

@@ -33,7 +33,7 @@ library(raster)
 setwd('~/psrc/R/urbansimRtools/capacity') 
 
 # save in csv file
-save <- TRUE
+save <- FALSE
 
 # sampling share of residential projects on mix-use parcels
 res.ratio <- 50
@@ -45,13 +45,13 @@ mu.sampling <- FALSE
 # prefix of the output file name
 #file.prefix <- paste0("CapacityPcl_res", res.ratio, "-", Sys.Date())
 #file.prefix <- paste0("CapacityPcl_res", res.ratio, "-", Sys.Date(), "_hb1110")
-#file.prefix <- paste0("CapacityPclNoSampling_res", res.ratio, "-", Sys.Date())
-file.prefix <- paste0("CapacityPclNoSampling_res", res.ratio, "-", Sys.Date(), "_hb1110")
+file.prefix <- paste0("CapacityPclNoSampling_res", res.ratio, "-", Sys.Date())
+#file.prefix <- paste0("CapacityPclNoSampling_res", res.ratio, "-", Sys.Date(), "_hb1110")
 
 # Where are csv tables with the full set of proposals and components 
 # (ideally from an unlimited urbansim run)
 prop.path <- "~/opus/urbansim_data/data/psrc_parcel/runs/run_35.2025_05_21_09_54_unlimited_hb1110/csv/2024"
-#prop.path <- "~/opus/urbansim_data/data/psrc_parcel/runs/run_24.2025_05_13_17_21_unlimited_2x/csv/2024"
+prop.path <- "~/opus/urbansim_data/data/psrc_parcel/runs/run_36.2025_06_02_14_35_unlimited_1x/csv/2024"
 #prop.path <- "~/opus/urbansim_data/data/psrc_parcel/runs/run_23.2025_05_06_09_55_unlimited_3x/csv/2024"
 #prop.path <- "~/n$/vision2050/opusgit/urbansim_data/data/psrc_parcel/runs/awsmodel01/run_71.run_2022_09_23_14_26/csv/2019"
 #prop.path <- "~/AWS1E/opusgit/urbansim_data/data/psrc_parcel/runs/run_72.run_2023_01_10_21_14/csv/2019"

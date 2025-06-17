@@ -2,7 +2,7 @@ library(data.table)
 library(openxlsx)
 
 setwd('~/psrc/R/urbansimRtools/capacity')
-lookup.path <- "~/opus/urbansim_data/data/psrc_parcel/runs/run_24.2025_05_13_17_21_unlimited_2x/csv/2023"
+lookup.path <- "~/opus/urbansim_data/data/psrc_parcel/runs/run_36.2025_06_02_14_35_unlimited_1x/csv/2023"
 
 # lookup datasets
 subregs <- fread("~/psrc/R/shinyserver/luf-dashboard/data/control_hcts.csv")
@@ -15,8 +15,8 @@ controls <- subregs[control_hct_id < 1000]
 controls <- merge(controls, counties, by = "county_id")[, `:=`(lgarea_group = NULL, subreg_id = NULL, control_hct_id = NULL)]
 setnames(controls, "control_hct_name", "name")
 
-pcl1 <- fread("CapacityPclNoSampling_res50-2025-05-14.csv")
-pcl2 <- fread("CapacityPclNoSampling_res50-2025-05-21_hb1110.csv")
+pcl1 <- fread("CapacityPclNoSampling_res50-2025-06-03.csv")
+pcl2 <- fread("CapacityPclNoSampling_res50-2025-06-09_hb1110.csv")
 allpcl <- fread(file.path(lookup.path, "parcels.csv"))
 
 pcl1[subregs, control_id := i.control_id, on = "subreg_id"]
