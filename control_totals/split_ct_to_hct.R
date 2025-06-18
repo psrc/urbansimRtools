@@ -31,12 +31,13 @@ CT.file <- 'inputs/Control-Totals-RTP26-2025-06-11.xlsx' # BY 2023
 # parcel-level capacity file
 # generated via https://github.com/psrc/urbansimRtools/blob/master/capacity/parcels_capacity.R
 #capacity.file <- '~/psrc/R/urbansimRtools/capacity/CapacityPcl_res50-2023-01-11.csv' # BY 2018
-capacity.file <- '~/psrc/R/urbansimRtools/capacity/CapacityPclNoSampling_res50-2025-06-03.csv' # BY 2023
-#capacity.file <- '~/psrc/R/urbansimRtools/capacity/CapacityPclNoSampling_res50-2025-06-09_hb1110.csv' # BY 2023 with HB1110
+#capacity.file <- '~/psrc/R/urbansimRtools/capacity/CapacityPclNoSampling_res50-2025-06-03.csv' # BY 2023
+capacity.file <- '~/psrc/R/urbansimRtools/capacity/CapacityPclNoSampling_res50-2025-06-17_hb1110.csv' # BY 2023 with HB1110
   
 output.dir <- "outputs"
 output.suffix <- paste0("-", Sys.Date())  # uniquely identify results from this split  
-#output.suffix <- paste0("_hb1110-", Sys.Date()) 
+output.suffix <- paste0("_hb1110-", Sys.Date()) 
+
 save.results <- TRUE      # should results be stored in an Excel file
 results.file.name.prefix <- file.path(output.dir, paste0("LUVit_ct_by_tod_generator", output.suffix))  # only used if save.results is TRUE
 do.plot <- TRUE           # should plots be created
