@@ -33,7 +33,7 @@ library(raster)
 setwd('~/psrc/R/urbansimRtools/capacity') 
 
 # save in csv file
-save <- FALSE
+save <- TRUE
 
 # sampling share of residential projects on mix-use parcels
 res.ratio <- 50
@@ -46,20 +46,23 @@ mu.sampling <- FALSE
 #file.prefix <- paste0("CapacityPcl_res", res.ratio, "-", Sys.Date())
 #file.prefix <- paste0("CapacityPcl_res", res.ratio, "-", Sys.Date(), "_hb1110")
 file.prefix <- paste0("CapacityPclNoSampling_res", res.ratio, "-", Sys.Date())
-#file.prefix <- paste0("CapacityPclNoSampling_res", res.ratio, "-", Sys.Date(), "_hb1110")
+file.prefix <- paste0("CapacityPclNoSampling_res", res.ratio, "-", Sys.Date(), "_run42_hb1110")
 
 # Where are csv tables with the full set of proposals and components 
 # (ideally from an unlimited urbansim run)
 prop.path <- "~/opus/urbansim_data/data/psrc_parcel/runs/run_35.2025_05_21_09_54_unlimited_hb1110/csv/2024"
 prop.path <- "~/opus/urbansim_data/data/psrc_parcel/runs/run_36.2025_06_02_14_35_unlimited_1x/csv/2024"
+prop.path <- "~/opus/urbansim_data/data/psrc_parcel/runs/run_42.2025_09_29_02_24_unlimited_du_per_lot/csv/2024"
+
 #prop.path <- "~/opus/urbansim_data/data/psrc_parcel/runs/run_23.2025_05_06_09_55_unlimited_3x/csv/2024"
 #prop.path <- "~/n$/vision2050/opusgit/urbansim_data/data/psrc_parcel/runs/awsmodel01/run_71.run_2022_09_23_14_26/csv/2019"
 #prop.path <- "~/AWS1E/opusgit/urbansim_data/data/psrc_parcel/runs/run_72.run_2023_01_10_21_14/csv/2019"
 
 # Where are csv lookup tables 
 # (base year buildings & parcels, building_sqft_per_job,
-# development_constraints, development_templates & components)
-lookup.path <- "~/opus/urbansim_data/data/psrc_parcel/runs/run_24.2025_05_13_17_21_unlimited_2x/csv/2023"
+# development_constraints, development_templates & components)"~/opus/urbansim_data/data/psrc_parcel/runs/run_42.2025_09_29_02_24_unlimited_du_per_lot/csv/2024"
+lookup.path <- "~/opus/urbansim_data/data/psrc_parcel/runs/run_42.2025_09_29_02_24_unlimited_du_per_lot/csv/2023"
+#lookup.path <- "~/opus/urbansim_data/data/psrc_parcel/runs/run_24.2025_05_13_17_21_unlimited_2x/csv/2023"
 #lookup.path <- "~/n$/vision2050/opusgit/urbansim_data/data/psrc_parcel/runs/awsmodel01/run_71.run_2022_09_23_14_26/csv/2018"
 #lookup.path <- "~/AWS1E/opusgit/urbansim_data/data/psrc_parcel/runs/run_72.run_2023_01_10_21_14/csv/2018"
 
@@ -77,7 +80,9 @@ comp <- subset(comp, proposal_id %in% props$proposal_id)
 pcl <- fread(file.path(lookup.path, "parcels.csv"))
 setkey(pcl, parcel_id)
 constraints <- fread(file.path(lookup.path, "development_constraints.csv"))
-constr <- constraints[, .(max_dens = max(maximum)), by = .(plan_type_id, constraint_type)]
+constr.columns <- setdiff(colnames(constraints), c("constraint_id", "generic_land_use_type_id",
+                                                   "maximum", "minimum"))
+constr <- constraints[, .(max_dens = max(maximum)), by = constr.columns]
 templ <- fread(file.path(lookup.path, "development_templates.csv"))
 props <- merge(props, templ[, .(template_id, density_type)], by="template_id")
 templc <- fread(file.path(lookup.path, "development_template_components.csv"))
@@ -118,7 +123,7 @@ propc[, proposed_units_new := ifelse(density_type == "far",
                                      pmax(1, units_proposed_orig/building_sqft_per_unit),
                                      units_proposed_orig)*percent_building_sqft/100.]
 # compute building_sqft
-propc[, building_sqft := ifelse(density_type == "units_per_acre", 
+propc[, building_sqft := ifelse(density_type != "far", 
                                 units_proposed_orig * building_sqft_per_unit,
                                 units_proposed_orig)*percent_building_sqft/100.]
 
@@ -128,7 +133,7 @@ propc[, has_res := any(building_type_id %in% c(19,4,12)), by = proposal_id]
 
 # remove smaller proposals and those with status_id 44
 propc <- subset(propc, is.na(pcl_bldsqft) | 
-                  (units_proposed_orig > pcl_resunits & density_type == "units_per_acre") | 
+                  (units_proposed_orig > pcl_resunits & density_type != "far") | 
                   (units_proposed_orig > pcl_nonres_sqft & density_type == "far"))
 #propc <- subset(propc, status_id != 44)
 
