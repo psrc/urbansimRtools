@@ -19,9 +19,9 @@ library(readxl)
 library(tools)
 
 # settings related to base year data
-base_year <- 2018
-get.data.from.rda <- TRUE # if TRUE, data is retrieved from a previously stored rda file
-get.data.from.mysql <- FALSE # if FALSE, and get.data.from.rda is FALSE, data is retrieved from PUMs
+base_year <- 2023
+get.data.from.rda <- FALSE # if TRUE, data is retrieved from a previously stored rda file
+get.data.from.mysql <- TRUE # if FALSE, and get.data.from.rda is FALSE, data is retrieved from PUMs
 base.db <- paste0(base_year,"_parcel_baseyear") # mysql DB (used only if get.data.from.mysql is TRUE)
 store.base.data <- TRUE # save retrieved base year data into an rda file (not used if get.data.from.rda is TRUE) 
 rda.file.name <- paste0("base_year_data_", base_year, "_for_CT.rda") # file name where to store the data
@@ -32,7 +32,8 @@ get.forecast.from.elmer <- FALSE # if FALSE, the forecast is retrieved from a fi
 #forecast.file.name <- "J:/Projects/UrbanSim/NEW_DIRECTORY/Inputs/annual_control_totals/controls_from_2017_macro_forecast/Working_Update_annual_hh_control_totals_2018_forecasts_2018_BY.xlsx"
 #forecast.file.name <- "~/psrc/control_totals/Working_Update_annual_hh_control_totals_2018_forecasts_2018_BY.xlsx"
 #forecast.file.name <- "~/psrc/R/urbansimRtools/control_totals/LUVit_ct_by_tod_generator_90-90-90_2022-11-22.xlsx"
-forecast.file.name <- '~/psrc/R/urbansimRtools/control_totals/LUVit_ct_by_tod_generator_90-90-90_2023-01-11.xlsx'
+#forecast.file.name <- '~/psrc/R/urbansimRtools/control_totals/LUVit_ct_by_tod_generator_90-90-90_2023-01-11.xlsx'
+forecast.file.name <- 'inputs/Control-Totals-RTP26-2025-06-11.xlsx'
 
 # if the forecast the regional macroeconomic forecast  
 is.forecast.ref <- FALSE # if FALSE it is assumed it comes from a version of unrolled control totals
@@ -48,7 +49,7 @@ output.file.name.emp <- paste0("regional_annual_employment_control_totals-", Sys
 output.ct.db <- "sandbox_hana" # if not NULL, output is also written into mysql DB
 #output.ct.db <- base.db
 #output.ct.db <- NULL
-overwrite.existing.in.db <- FALSE # should mysql tables be overwritten (only used if output.ct.db is not NULL)  
+overwrite.existing.in.db <- TRUE # should mysql tables be overwritten (only used if output.ct.db is not NULL)  
   
 # Functions ---------------------------------------------------------
 
@@ -137,8 +138,8 @@ mysql.connection <- function(dbname = "2018_parcel_baseyear") {
 }
 
 # income levels 
-income.bins <- c(0, 50000, 75000, 100000, 0)
-income.labels <- c("Under $50,000", "$50,000-$74,999", "$75,000-$99,999", "$100,000 or more")
+income.bins <- c(0, 56000, 106000, 180000, 0)
+income.labels <- c("Under $56,000", "$56,000-$105,999", "$106,000-$179,999", "$180,000 or more")
 
 # Data retrieval ----------------------------------------------------
 
@@ -168,9 +169,9 @@ if(get.data.from.rda){
     ## Get household size combinations from UrbanSim baseyear itself
     prsn_sql <- "CASE WHEN h.persons < 7 THEN h.persons ELSE 7 END"
     wrkr_sql <- "CASE WHEN workers < 4 THEN h.workers ELSE 4 END"
-    inc_sql <- paste("CASE WHEN h.income >= 100000 THEN '", income.labels[4], "'",
-                     "WHEN h.income >= 75000 THEN '", income.labels[3], "'",
-                     "WHEN h.income >= 50000 THEN '", income.labels[2], "'",
+    inc_sql <- paste("CASE WHEN h.income >= 180000 THEN '", income.labels[4], "'",
+                     "WHEN h.income >= 106000 THEN '", income.labels[3], "'",
+                     "WHEN h.income >= 56000 THEN '", income.labels[2], "'",
                      "ELSE '", income.labels[1], "' END")
     
     hhs_sql <- paste("SELECT", base_year, "AS year,", prsn_sql, "AS pph,", 
@@ -218,7 +219,7 @@ if(get.forecast.from.elmer) {
               .[c(1,3),] %>% data.table::transpose(keep.names="year") %>% setnames(c("V1", "V2"), c("hh_pop", "household_count"))
       forecast[, year := as.integer(year)]
     } else { # the forecast comes from a sheet in the same format as unrolled control totals
-      forecast <- data.table(read_excel(forecast.file.name, sheet="unrolled regional"))
+      forecast <- data.table(read_excel(forecast.file.name, sheet="unrolled_regional"))
       forecast <- forecast[, .(year = as.integer(year), hh_pop = total_hhpop, household_count = total_hh, job_count = total_emp)]
     }
   }
@@ -231,7 +232,8 @@ set.seed(1234)
 
 hhs_full[, income := trimws(income)]
 
-CTpph <- data.table(expand.grid(year = sort(unique(forecast$year)), pph = 1:7))                    # create all combinations of year and pph
+CTpph <- data.table(expand.grid(year = sort(unique(forecast[year >= base_year]$year)), 
+                                pph = 1:7))                    # create all combinations of year and pph
 
 CTpph[hhs_full[, .(count = sum(count)), by = .(year, pph)], 
       `:=`(household_count = i.count), on = .(year, pph)]                                  # merge base year hh counts with CTpph 
