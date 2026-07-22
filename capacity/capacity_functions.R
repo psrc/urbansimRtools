@@ -17,8 +17,8 @@ compute.parcel.capacity <- function(pcl, constraints, job.sqft, include.coverage
     pclw[constraint_type == "units_per_lot", residential_units := ifelse(parcel_sqft >= 3000, maximum, 0)]
     # select one max for residential and one for non-res type, so that each parcel has 2 records at most
     pclwu <- rbind(
-        pclw[pclw[constraint_type != "far", .I[which.max(maximum)], by = .(parcel_id)]$V1][, constraint_type := "units_per_lot"],
-        pclw[pclw[constraint_type == "far", .I[which.max(maximum)], by = .(parcel_id)]$V1]
+        pclw[pclw[constraint_type != "far", .I[which.max(residential_units)], by = .(parcel_id)]$V1][, constraint_type := "units_per_lot"],
+        pclw[pclw[constraint_type == "far", .I[which.max(building_sqft)], by = .(parcel_id)]$V1]
     )
     pclwu[, mixed := .N > 1, by = parcel_id]
     

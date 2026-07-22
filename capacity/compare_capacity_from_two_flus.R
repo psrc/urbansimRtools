@@ -16,7 +16,9 @@ constr.dir <- "~/psrc/urbansim-baseyear-prep/future_land_use/dev_constraints"
 flu.dir <- file.path(constr.dir, "../flu")
     
 # when were the flu file and constraints file created
-flu.date <- c("2023-01-10", "2026-05-26")
+flu.date <- c("2023-01-10", "2026-07-22")
+#flu.date <- c("2026-06-01", "2026-07-22")
+
 flu.names <- c("old", "new")
 lc.factor <- c(1, 1) # if LC is defined as percentage (then use 1/100) or proportion (then use 1)
 
@@ -29,9 +31,11 @@ res.ratios <- c(30, 40, 50, 60, 70)
 
 # should the parcel file be updated with new plan_type_id
 update.plantype <- c(FALSE, TRUE)
+#update.plantype <- c(TRUE, TRUE)
 
 # should parcel data be stored
 store.pcl.data <- FALSE
+include.ct <- TRUE
 
 source("capacity_functions.R")
 
@@ -49,12 +53,19 @@ cities[, Ncnty2 := .N, by = c("city_name", "county_id")]
 cities[counties, county_name := i.name, on = "county_id"]
 cities[N2 > 1 & Ncnty2 == 1, city_name := paste0(city_name, " (", county_name, ")")]
 
+controls <- fread(file.path(data.dir, "controls.csv"))
+controls[, N := .N, by = "control_name"]
+# add county name
+controls[counties, county_name := i.name, on = "county_id"]
+controls[N > 1, control_name := paste0(control_name, " (", county_name, ")")]
+
 geographies <- list(growth_centers = list(xwalk = fread(file.path(data.dir, "growth_centers.csv")),
                                           id_name = "growth_center_id", name_col = "name"),
                     counties = list(xwalk = counties, id_name = "county_id", name_col = "name"),
                     large_areas = list(xwalk = fread(file.path(data.dir, "large_areas.csv")),
                                        id_name = "large_area_id", name_col = "large_area_name"),
-                    cities = list(xwalk = cities, id_name = "city_id", name_col = "city_name")
+                    cities = list(xwalk = cities, id_name = "city_id", name_col = "city_name"),
+                    controls = list(xwalk = controls, id_name = "control_id", name_col = "control_name")
                     )
 # rename all name columns to "name"
 for(geo in names(geographies))
@@ -69,6 +80,7 @@ pcls <- readRDS(file.path(rds.data.dir, "parcels.rds"))
 setkey(pcls, "parcel_id")
 # correct one city
 pcls[city_id == 107, city_id := 109]
+
 
 job_sqft <- fread(file.path(data.dir, "building_sqft_per_job.csv"))
 bts <- fread(file.path(data.dir, "building_types.csv"))
@@ -97,14 +109,20 @@ allres <- allpcls <- NULL
 for(fluidx in c(1, 2)){
 
   # load constraints file
-  constr <- fread(file.path(constr.dir, paste0("devconstr_v2_", flu.date[fluidx], ".csv")))
+  constr <- fread(file.path(constr.dir, paste0("devconstr_final_", flu.date[fluidx], ".csv")))
 
   # load the FLU file by plan_type_id and constraints by LC
   flu <- fread(file.path(flu.dir, paste0("flu_imputed_ptid_", flu.date[fluidx], ".csv")))
 
+  # # quick temporary fixes
+  # if(fluidx == 2){
+  #   # Everett_HI
+  #   constr[plan_type_id == 417 & constraint_type == "far", `:=`(maximum = 2.424242, maxht = 100)]
+  #   flu[plan_type_id == 417, `:=`(MaxFAR_Indust = 2.424242, MaxHt_Indust = 100)]
+  # }
   if(update.plantype[fluidx]){
     # load parcels with updated plan_type_id
-    pcls_upd <- fread(file.path(constr.dir, paste0("prcls_ptid_v2_", flu.date[fluidx], ".csv")))
+    pcls_upd <- fread(file.path(constr.dir, paste0("prcls_ptid_final_", flu.date[fluidx], ".csv")))
     pcls[pcls_upd, plan_type_id := i.plan_type_id, on = "parcel_id"]
   }
 
@@ -165,7 +183,7 @@ if(store.pcl.data){
   colnames(pcl.to.store) <- gsub(".x", paste0("_", flu.names[1]), colnames(pcl.to.store), fixed = TRUE)
   colnames(pcl.to.store) <- gsub(".y", paste0("_", flu.names[2]), colnames(pcl.to.store), fixed = TRUE)
   pcl.to.store <- merge(pcls[, .(parcel_id, county_id, large_area_id, city_id, faz_id, zone_id, 
-                                 growth_center_id, parcel_sqft)],
+                                 growth_center_id, control_id, parcel_sqft)],
                         pcl.to.store)
   fwrite(pcl.to.store, file = paste0("parcel_capacity_data_flu-", flu.date[2], ".csv"))
 }
@@ -174,6 +192,27 @@ if(store.pcl.data){
 # choose one developable factor and subset results to it for plotting purposes
 developable.factor <- developable.factors[1]
 res <- allres[developfac == developable.factor]
+
+if(include.ct){
+  ct <- fread(file.path(data.dir, "annual_household_control_totals_07202026.csv"))
+  ct <- ct[year == 2050, .(hh = sum(total_number_of_households)), by = "subreg_id"]
+  # correct JBLM control
+  ct[subreg_id == 405, subreg_id := 403]
+  # aggregate to control_id
+  ct[, control_id := subreg_id][subreg_id > 1000, control_id := control_id - 1000]
+  ct <- ct[, .(hh = sum(hh)), by = "control_id"]
+  ct[controls, `:=`(name = i.name, county_id = i.county_id, county_name = i.county_name),
+     on = "control_id"]
+  ctcnty <- ct[, .(hh = sum(hh)), by = c("county_id", "county_name")]
+  res <- rbind(res, ct[, .(id = control_id, type = "residential-units", 
+                           total_capacity = hh, res_ratio = 50, name, 
+                           geography = "controls", flu = "target")], fill = TRUE)
+  res <- rbind(res, ctcnty[, .(id = county_id, type = "residential-units", 
+                               total_capacity = hh,
+                               res_ratio = 50, name = county_name,
+                               geography = "counties", flu = "target")], fill = TRUE)
+}
+
 
 # plot results
 
@@ -184,17 +223,33 @@ res2 <- melt(res, id.vars = c("flu", "id", "name", "geography", "type", "res_rat
 reseb <- res2[id > 0 &  indicator %in% c("remaining_capacity", "total_capacity")][type == "non-residential-jobs" & indicator == "total_capacity", value := NA]
 reseb <- dcast(reseb, flu + geography + id + name + type + indicator ~ res_ratio, value.var = "value")
 
-# add county to cities that have the same names
-reseb[, name_count := .N, by = c("flu", "geography", "name", "type", "indicator")]
-
 allg <- NULL
 for(geo in names(geographies)){
-  g <- ggplot(reseb[geography == geo & indicator == "total_capacity" & type != "non-residential-jobs"], 
+  g <- ggplot(reseb[geography == geo & indicator == "total_capacity" & type != "non-residential-jobs" & flu != "target"], 
                aes(x = name, group = flu, color = flu)) + 
     geom_errorbar(aes(ymin = `40`, ymax = `60`), position = position_dodge(width=0.3), na.rm = TRUE)  + 
     geom_point(aes(y = `50`), na.rm = TRUE, position = position_dodge(width=0.3)) +
     facet_grid(type ~ . , scales = "free") + xlab("") + ylab("") +
     guides(x =  guide_axis(angle = 90))
+  if(include.ct && nrow(reseb[geography == geo & flu == "target"]) > 0)
+    g <- g + geom_point(data = reseb[geography == geo & flu == "target"], 
+                       aes(y = `50`, fill = "HH target"), shape = 4, color = "black") +
+      scale_fill_manual(name = "", values = c("HH target" = "yellow"))
+  if(include.ct && geo == "controls"){
+    # create a plot with only id where target is larger than capacity
+    dat <- reseb[geography == geo & indicator == "total_capacity" & type == "residential-units"]
+    dat[dat[flu == "target"], target := `i.50`, on = c("id")]
+    show.ids <- unique(dat[flu == "new" & `50` - target < 0, id])
+    dat <- dat[id %in% show.ids]
+    gt <- ggplot(dat[flu != "target"], 
+                aes(x = name, group = flu, color = flu)) + 
+      geom_errorbar(aes(ymin = `40`, ymax = `60`), position = position_dodge(width=0.3), na.rm = TRUE)  + 
+      geom_point(aes(y = `50`), na.rm = TRUE, position = position_dodge(width=0.3)) +
+      facet_grid(type ~ . , scales = "free") + xlab("") + ylab("") +
+      guides(x =  guide_axis(angle = 90)) +
+      geom_point(data = dat[flu == "target"], aes(y = `50`, fill = "HH target"), shape = 4, color = "black") +
+      scale_fill_manual(name = "", values = c("HH target" = "yellow"))
+  }
   allg[[geo]] <- g
 }
 
@@ -202,15 +257,23 @@ print(allg[["counties"]])
 print(allg[["cities"]])
 print(allg[["large_areas"]])
 print(allg[["growth_centers"]])
+print(allg[["controls"]])
 
 
-pdf(file = paste0("capacity_comparisons_various_gegraphies_flu-", flu.date[2], ".pdf"), width = 14, height = 8)
+pdf(file = paste0("capacity_comparisons_various_gegraphies_flu-", flu.date[1], "_", flu.date[2], ".pdf"), width = 14, height = 8)
+#pdf(file = paste0("capacity_no_lc_comparisons_various_gegraphies_flu-", flu.date[1], "_", flu.date[2], ".pdf"), width = 14, height = 8)
+
 print(allg[["counties"]] + ggtitle("Counties"))
 print(allg[["large_areas"]]+ ggtitle("Large Areas"))
 print(allg[["growth_centers"]] + ggtitle("Growth Centers"))
 print(allg[["cities"]]  + ggtitle("Cities"))
+print(allg[["controls"]]  + ggtitle("Controls"))
+if(include.ct){
+  print(gt + ggtitle("Controls lacking capacity"))
+}
 dev.off()
 
+stop("End of processing")
 
 # below is exploration code
 ############################
@@ -219,25 +282,32 @@ if(!exists("pcl.to.store")) {
   colnames(pcl.to.store) <- gsub(".x", paste0("_", flu.names[1]), colnames(pcl.to.store), fixed = TRUE)
   colnames(pcl.to.store) <- gsub(".y", paste0("_", flu.names[2]), colnames(pcl.to.store), fixed = TRUE)
   pcl.to.store <- merge(pcls[, .(parcel_id, county_id, large_area_id, city_id, faz_id, zone_id, 
-                                 growth_center_id, parcel_sqft)],
+                                 growth_center_id, control_id, parcel_sqft)],
                         pcl.to.store)
 }
 
-spcls <- pcl.to.store[city_id == 94]
+spcls <- pcl.to.store[city_id == 38]
+spcls <- pcl.to.store[growth_center_id == 514]
+spcls <- pcl.to.store[control_id == 64]
 spcls[, .(DUnew = sum(`residential-units_new`, na.rm = TRUE), 
           NRSFnew = sum(`non-residential-sqft_new`, na.rm = TRUE)
           ), by = "plan_type_id_new"][order(-NRSFnew)]#[order(-DUnew)]
 spcls[, .(DUold = sum(`residential-units_old`, na.rm = TRUE), 
           NRSFold = sum(`non-residential-sqft_new`, na.rm = TRUE)
           ), by = "plan_type_id_old"][order(-NRSFold)]#[order(-DUold)]
+spcls[, .(DUnew = sum(`residential-units_new`, na.rm = TRUE), DUold = sum(`residential-units_old`, na.rm = TRUE)
+), by = "plan_type_id_new"][order((DUnew - DUold))]
 
 spcls[, .N, by = "plan_type_id_new"][order(-N)]
 spcls[, .N, by = "plan_type_id_old"][order(-N)]
-spcls[plan_type_id_new == 421, .N, by = "plan_type_id_old"][order(-N)]
+spcls[plan_type_id_new == 2122, .N, by = "plan_type_id_old"][order(-N)]
   
-constr.old <- fread(file.path(constr.dir, paste0("devconstr_v2_", flu.date[1], ".csv")))
-constr.new <- fread(file.path(constr.dir, paste0("devconstr_v2_", flu.date[2], ".csv")))
+constr.old <- fread(file.path(constr.dir, paste0("devconstr_final_", flu.date[1], ".csv")))
+constr.new <- fread(file.path(constr.dir, paste0("devconstr_final_", flu.date[2], ".csv")))
 flu.old <- fread(file.path(flu.dir, paste0("flu_imputed_ptid_", flu.date[1], ".csv")))
 flu.new <- fread(file.path(flu.dir, paste0("flu_imputed_ptid_", flu.date[2], ".csv")))
-flu.new[plan_type_id == 417]
-flu.old[plan_type_id %in% c(432, 416, 424, 411)]
+flu.new[plan_type_id == 859]
+flu.old[plan_type_id %in% c(1311)]
+
+# check where there is only Mixed_Use and nothing else
+paste(sort(flu.new[Mixed_Use == 1 & Res_Use == 0 & Comm_Use == 0 & Office_Use == 0 & Indust_Use == 0, juris_zn]), collapse = ", ")
