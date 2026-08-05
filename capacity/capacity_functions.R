@@ -21,7 +21,6 @@ compute.parcel.capacity <- function(pcl, constraints, job.sqft, include.coverage
         pclw[pclw[constraint_type == "far", .I[which.max(building_sqft)], by = .(parcel_id)]$V1]
     )
     pclwu[, mixed := .N > 1, by = parcel_id]
-    
     # add county names
     pclwu[, county := factor(county_id, levels = c(33, 35, 53, 61), labels = c("King", "Kitsap", "Pierce", "Snohomish"))]
     return(pclwu)
