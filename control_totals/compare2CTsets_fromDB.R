@@ -80,19 +80,46 @@ dat <- merge(dat, controls, by = "control_id")
 dat <- dat[order(control_id, subreg_id)]
 dat[, control_name2 := paste(control_id, control_name)]
 
+# we want the colors to always match the same label
+# grab the first 4 default ggplot2 hues
+default_colors <- hue_pal()(4)
 
+# name them to match the factor levels/labels
+my_colors <- setNames(default_colors, 
+                      c(paste(CTnames, "- HCT"), 
+                        paste(CTnames, "- non HCT")))
+dat[, type := factor(type, levels = names(my_colors))] # sets the order of labels in the legend
 
-nrows <- 4
-pdf(paste0("CTs_comp-", Sys.Date(),  ".pdf"), width = 10, height = 9)
+# create pdf with HCT & non-HCT breakdown
+nrows <- 4 # number of plot rows on one page
+pdf(paste0("CTs_comp_wHCT-", Sys.Date(),  ".pdf"), width = 10, height = 9)
 
 for(row in seq(1, nrow(controls), by = nrows)){
     g <- ggplot(dat[control_id %in% controls[row:(row + nrows - 1), control_id]], 
                 aes(x = year, y = value, group = type, color = type)) +
         geom_line() + geom_point() + ylab("") + 
         facet_wrap(reorder(control_name2, -control_id) ~ indicator, ncol = 2, scales = "free_y", as.table = FALSE) + 
-        #scale_color_manual(values=this.col, breaks = names(cols)) + 
-        scale_y_continuous(labels = scales::comma)
+        scale_y_continuous(labels = scales::comma) +
+        scale_color_manual(values = my_colors, name = NULL)
     print(g)
 }
 dev.off()
+
+# create pdf without HCT & non-HCT breakdown
+datagg <- dat[, .(value = sum(value)), by = .(control_id, year, name, indicator, control_name2)]
+
+nrows <- 4 # number of plot rows on one page
+pdf(paste0("CTs_comp_totals-", Sys.Date(),  ".pdf"), width = 10, height = 9)
+
+for(row in seq(1, nrow(controls), by = nrows)){
+    g <- ggplot(datagg[control_id %in% controls[row:(row + nrows - 1), control_id]], 
+                aes(x = year, y = value, group = name, color = name)) +
+        geom_line() + geom_point() + ylab("") + 
+        facet_wrap(reorder(control_name2, -control_id) ~ indicator, ncol = 2, scales = "free_y", as.table = FALSE) + 
+        scale_y_continuous(labels = scales::comma) +
+        theme(legend.title = element_blank())
+    print(g)
+}
+dev.off()
+
 
