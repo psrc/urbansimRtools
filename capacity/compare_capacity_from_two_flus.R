@@ -20,8 +20,11 @@ flu.dir <- file.path(constr.dir, "../flu")
 # when were the flu file and constraints file created
 flu.date <- c("2023-01-10", "2026-07-28")
 #flu.date <- c("2026-06-01", "2026-07-22")
+flu.date <- c("2026-07-28", "2026-08-07")
+flu.date <- c("2023-01-10", "2026-08-19")
 
 flu.names <- c("old", "new")
+#flu.names <- c("07-28", "08-07")
 lc.factor <- c(1, 1) # if LC is defined as percentage (then use 1/100) or proportion (then use 1)
 
 # factors that will constrain development, 
@@ -38,12 +41,16 @@ res.ratios <- c(40, 50, 60)
 #   (set it to FALSE, if the FLU's plan_type_id is the one attached to parcels)
 #update.plantype <- c(FALSE, TRUE)
 update.plantype <- c(TRUE, FALSE) # using parcel table that has been updated with new plan_type_id
+#update.plantype <- c(FALSE, TRUE)
+update.plantype <- c(TRUE, TRUE)
 
 # should current built be considered
 consider.current.built <- TRUE
 
 # should parcel data be stored
 store.pcl.data <- FALSE
+
+store.pcl.data.for.housing.analysis <- TRUE
 
 # include targets in the plots
 include.ct <- TRUE
@@ -212,7 +219,7 @@ for(fluidx in c(1, 2)){
   }
 }
 
-if(store.pcl.data){
+if(store.pcl.data || store.pcl.data.for.housing.analysis){
   # store parcel's capacity
   pcl.to.store <- merge(allpcls[[1]], allpcls[[2]])
   colnames(pcl.to.store) <- gsub(".x", paste0("_", flu.names[1]), colnames(pcl.to.store), fixed = TRUE)
@@ -220,7 +227,21 @@ if(store.pcl.data){
   pcl.to.store <- merge(pcls[, .(parcel_id, county_id, large_area_id, city_id, faz_id, zone_id, 
                                  growth_center_id, control_id, control_rgs_id, parcel_sqft)],
                         pcl.to.store)
-  fwrite(pcl.to.store, file = paste0("parcel_capacity_data_flu-", flu.date[2], ".csv"))
+  if(store.pcl.data)
+    fwrite(pcl.to.store, file = paste0("parcel_capacity_data_flu-", flu.date[2], ".csv"))
+  if(store.pcl.data.for.housing.analysis){
+    pcl.to.store.hu <- copy(allpcls[[2]])
+    setnames(pcl.to.store.hu, "residential-units", "DUzoned")
+    pcl.to.store.hu[pclbld, DUbuilt := i.residential_units, on = "parcel_id"]
+    pcl.to.store.hu[is.na(DUzoned), DUzoned := 0]
+    pcl.to.store.hu[is.na(DUbuilt), DUbuilt := 0]
+    pcl.to.store.hu[, DUdif := pmax(0, DUzoned - DUbuilt)]
+    pcl.to.store.hu <- pcl.to.store.hu[DUbuilt + DUzoned > 0]
+    pcl.to.store.hu[pcls, county_id := i.county_id, on = "parcel_id"]
+    fwrite(pcl.to.store.hu[, .(parcel_id, plan_type_id, county_id, DUzoned = round(DUzoned, 3), 
+                               DUbuilt, DUdif = round(DUdif,3))], 
+           file = paste0("parcel_DUcapacity_flu-", flu.date[2], ".csv"))
+  }
 }
 
 
@@ -273,9 +294,10 @@ reseb <- res2[id > 0 &  indicator %in% c("remaining_capacity", "total_capacity")
 
 # convert to a wide format
 reseb <- dcast(reseb, flu + geography + id + name + type + indicator ~ res_ratio, value.var = "value")
+reseb[, flu := factor(flu, levels = rev(flu.names))]
 
 # create a list with ggplot objects
-allg <- NULL
+allg <- gt <- NULL
 for(geo in names(geographies)){
   # main plot 
   g <- ggplot(reseb[geography == geo & indicator == "total_capacity" & type != "non-residential-jobs" & flu != "target"], 
@@ -294,6 +316,7 @@ for(geo in names(geographies)){
     datct <- reseb[geography == geo & indicator == "total_capacity" & type == "residential-units"]
     datct[datct[flu == "target"], target := `i.50`, on = c("id")]
     show.ids <- unique(datct[flu == "new" & `60` - target < -5, id])
+    if(length(show.ids) == 0) next
     dat <- datct[id %in% show.ids]
     gt <- ggplot(dat[flu != "target"], 
                 aes(x = name, group = flu, color = flu)) + 
@@ -318,7 +341,7 @@ print(allg[["controls"]])
 
 # save plots into file
 pdf(file = paste0("capacity_comparisons_various_gegraphies_flu-", flu.date[1], "_", flu.date[2], 
-                  if(consider.current.built) "with_curbuilt" else "", "_v3.pdf"), width = 14, height = 8)
+                  if(consider.current.built) "with_curbuilt" else "", ".pdf"), width = 14, height = 8)
 #pdf(file = paste0("capacity_no_lc_comparisons_various_gegraphies_flu-", flu.date[1], "_", flu.date[2], ".pdf"), width = 14, height = 8)
 
 print(allg[["counties"]] + ggtitle("Counties"))
@@ -328,7 +351,7 @@ print(allg[["growth_centers"]] + ggtitle("Growth Centers"))
 print(allg[["cities"]]  + ggtitle("Cities"))
 print(allg[["controls"]]  + ggtitle("Controls"))
 
-if(include.ct){
+if(include.ct && !is.null(gt)){
   print(gt + ggtitle("Controls lacking residential capacity"))
 }
 dev.off()
@@ -371,7 +394,7 @@ constr.old <- fread(file.path(constr.dir, paste0("devconstr_final_", flu.date[1]
 constr.new <- fread(file.path(constr.dir, paste0("devconstr_final_", flu.date[2], ".csv")))
 flu.old <- fread(file.path(flu.dir, paste0("flu_imputed_ptid_", flu.date[1], ".csv")))
 flu.new <- fread(file.path(flu.dir, paste0("flu_imputed_ptid_", flu.date[2], ".csv")))
-flu.new[plan_type_id %in% c(1149)]
+flu.new[plan_type_id %in% c(208)]
 flu.old[plan_type_id %in% c(1714)]
 
 # check where there is only Mixed_Use and nothing else
