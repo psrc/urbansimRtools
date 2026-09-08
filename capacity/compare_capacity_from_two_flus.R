@@ -20,11 +20,14 @@ flu.dir <- file.path(constr.dir, "../flu")
 # when were the flu file and constraints file created
 flu.date <- c("2023-01-10", "2026-07-28")
 #flu.date <- c("2026-06-01", "2026-07-22")
-flu.date <- c("2026-07-28", "2026-08-07")
 flu.date <- c("2023-01-10", "2026-08-19")
+flu.date <- c("2023-01-10", "2026-09-03")
+#flu.date <- c("2026-08-19", "2026-09-03")
 
 flu.names <- c("old", "new")
 #flu.names <- c("07-28", "08-07")
+#flu.names <- c("08-19", "09-03")
+
 lc.factor <- c(1, 1) # if LC is defined as percentage (then use 1/100) or proportion (then use 1)
 
 # factors that will constrain development, 
@@ -41,14 +44,15 @@ res.ratios <- c(40, 50, 60)
 #   (set it to FALSE, if the FLU's plan_type_id is the one attached to parcels)
 #update.plantype <- c(FALSE, TRUE)
 update.plantype <- c(TRUE, FALSE) # using parcel table that has been updated with new plan_type_id
-#update.plantype <- c(FALSE, TRUE)
 update.plantype <- c(TRUE, TRUE)
+#update.plantype <- c(TRUE, TRUE)
+update.plantype.from.rds <- c(TRUE, FALSE) # should the update be made using data in baseyear explorer (should be TRUE for old FLU)
 
 # should current built be considered
 consider.current.built <- TRUE
 
 # should parcel data be stored
-store.pcl.data <- FALSE
+store.pcl.data <- TRUE
 
 store.pcl.data.for.housing.analysis <- TRUE
 
@@ -129,8 +133,9 @@ job_sqft_mean <- rbind(job_sqft_mean, jsf_nmu[, generic_land_use_type_id := 6])
 pclbld <- bldgs[, .(residential_units = sum(residential_units), non_residential_sqft = sum(non_residential_sqft),
                     building_sqft = sum(residential_units * sqft_per_unit + non_residential_sqft)), by = .(parcel_id)]
 
-pclplantypes <- list(readRDS(file.path(rds.data.dir, "parcels.rds"))[, .(parcel_id, plan_type_id)],
-                     NULL)
+if(any(update.plantype.from.rds))
+  pclplantypes <- list(readRDS(file.path(rds.data.dir, "parcels.rds"))[, .(parcel_id, plan_type_id)],
+                       NULL)
 
 
 # preserve the original plan type associated with the parcel table
@@ -148,10 +153,12 @@ for(fluidx in c(1, 2)){
 
   if(update.plantype[fluidx]){
     # load parcels with updated plan_type_id
-    if(!is.null(pclplantypes[[fluidx]])) {
+    if(update.plantype.from.rds[fluidx]) {
       pcls_upd <- pclplantypes[[fluidx]]
     } else 
       pcls_upd <- fread(file.path(constr.dir, paste0("prcls_ptid_final_", flu.date[fluidx], ".csv")))
+      if(! "parcel_id" %in% colnames(pcls_upd) && "PIN" %in% colnames(pcls_upd))
+        setnames(pcls_upd, "PIN", "parcel_id")
     # assign the plan type to parcels
     pcls[pcls_upd, plan_type_id := i.plan_type_id, on = "parcel_id"]
   }
@@ -294,7 +301,7 @@ reseb <- res2[id > 0 &  indicator %in% c("remaining_capacity", "total_capacity")
 
 # convert to a wide format
 reseb <- dcast(reseb, flu + geography + id + name + type + indicator ~ res_ratio, value.var = "value")
-reseb[, flu := factor(flu, levels = rev(flu.names))]
+reseb[, flu := factor(flu, levels = c(rev(flu.names), "target"))]
 
 # create a list with ggplot objects
 allg <- gt <- NULL
@@ -307,8 +314,8 @@ for(geo in names(geographies)){
     facet_grid(type ~ . , scales = "free") + xlab("") + ylab("") +
     guides(x =  guide_axis(angle = 90))
   # add targets
-  if(include.ct && nrow(reseb[geography == geo & flu == "target"]) > 0)
-    g <- g + geom_point(data = reseb[geography == geo & flu == "target"], 
+  if(include.ct && nrow(reseb[geography == geo & indicator == "total_capacity"& flu == "target"]) > 0)
+    g <- g + geom_point(data = reseb[geography == geo & indicator == "total_capacity" & flu == "target"], 
                        aes(y = `50`, fill = "HH target"), shape = 4, color = "black") +
       scale_fill_manual(name = "", values = c("HH target" = "yellow"))
   if(include.ct && geo == "controls"){
@@ -316,16 +323,17 @@ for(geo in names(geographies)){
     datct <- reseb[geography == geo & indicator == "total_capacity" & type == "residential-units"]
     datct[datct[flu == "target"], target := `i.50`, on = c("id")]
     show.ids <- unique(datct[flu == "new" & `60` - target < -5, id])
-    if(length(show.ids) == 0) next
-    dat <- datct[id %in% show.ids]
-    gt <- ggplot(dat[flu != "target"], 
+    if(length(show.ids) > 0) {
+      dat <- datct[id %in% show.ids]
+      gt <- ggplot(dat[flu != "target"], 
                 aes(x = name, group = flu, color = flu)) + 
-      geom_errorbar(aes(ymin = `40`, ymax = `60`), position = position_dodge(width=0.3), na.rm = TRUE)  + 
-      geom_point(aes(y = `50`), na.rm = TRUE, position = position_dodge(width=0.3)) +
-      facet_grid(type ~ . , scales = "free") + xlab("") + ylab("") +
-      guides(x =  guide_axis(angle = 90)) +
-      geom_point(data = dat[flu == "target"], aes(y = `50`, fill = "HH target"), shape = 4, color = "black") +
-      scale_fill_manual(name = "", values = c("HH target" = "yellow"))
+        geom_errorbar(aes(ymin = `40`, ymax = `60`), position = position_dodge(width=0.3), na.rm = TRUE)  + 
+        geom_point(aes(y = `50`), na.rm = TRUE, position = position_dodge(width=0.3)) +
+        facet_grid(type ~ . , scales = "free") + xlab("") + ylab("") +
+        guides(x =  guide_axis(angle = 90)) +
+        geom_point(data = dat[flu == "target"], aes(y = `50`, fill = "HH target"), shape = 4, color = "black") +
+        scale_fill_manual(name = "", values = c("HH target" = "yellow"))
+    }
     caplack <- datct # keep that dataset for debugging purposes
   }
   allg[[geo]] <- g
@@ -394,7 +402,7 @@ constr.old <- fread(file.path(constr.dir, paste0("devconstr_final_", flu.date[1]
 constr.new <- fread(file.path(constr.dir, paste0("devconstr_final_", flu.date[2], ".csv")))
 flu.old <- fread(file.path(flu.dir, paste0("flu_imputed_ptid_", flu.date[1], ".csv")))
 flu.new <- fread(file.path(flu.dir, paste0("flu_imputed_ptid_", flu.date[2], ".csv")))
-flu.new[plan_type_id %in% c(208)]
+flu.new[plan_type_id %in% c(623)]
 flu.old[plan_type_id %in% c(1714)]
 
 # check where there is only Mixed_Use and nothing else
