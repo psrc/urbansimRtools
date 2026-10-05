@@ -21,12 +21,12 @@ flu.dir <- file.path(constr.dir, "../flu")
 flu.date <- c("2023-01-10", "2026-07-28")
 #flu.date <- c("2026-06-01", "2026-07-22")
 flu.date <- c("2023-01-10", "2026-08-19")
-flu.date <- c("2023-01-10", "2026-09-03")
-#flu.date <- c("2026-08-19", "2026-09-03")
+flu.date <- c("2023-01-10", "2026-09-30")
+#flu.date <- c("2026-09-16", "2026-09-30")
 
 flu.names <- c("old", "new")
 #flu.names <- c("07-28", "08-07")
-#flu.names <- c("08-19", "09-03")
+#flu.names <- c("09-16", "09-30")
 
 lc.factor <- c(1, 1) # if LC is defined as percentage (then use 1/100) or proportion (then use 1)
 
@@ -45,16 +45,15 @@ res.ratios <- c(40, 50, 60)
 #update.plantype <- c(FALSE, TRUE)
 update.plantype <- c(TRUE, FALSE) # using parcel table that has been updated with new plan_type_id
 update.plantype <- c(TRUE, TRUE)
-#update.plantype <- c(TRUE, TRUE)
 update.plantype.from.rds <- c(TRUE, FALSE) # should the update be made using data in baseyear explorer (should be TRUE for old FLU)
 
 # should current built be considered
 consider.current.built <- TRUE
 
 # should parcel data be stored
-store.pcl.data <- TRUE
+store.pcl.data <- FALSE
 
-store.pcl.data.for.housing.analysis <- TRUE
+store.pcl.data.for.housing.analysis <- FALSE
 
 # include targets in the plots
 include.ct <- TRUE
@@ -94,7 +93,9 @@ geographies <- list(growth_centers = list(xwalk = fread(file.path(data.dir, "gro
                                        id_name = "large_area_id", name_col = "large_area_name"),
                     cities = list(xwalk = cities, id_name = "city_id", name_col = "city_name"),
                     controls = list(xwalk = controls, id_name = "control_id", name_col = "control_name"),
-                    rgs = list(xwalk = rgs, id_name = "control_rgs_id", name_col = "control_rgs_name")
+                    rgs = list(xwalk = rgs, id_name = "control_rgs_id", name_col = "control_rgs_name"),
+                    region = list(xwalk = data.table(name = "region", region_id = 1),
+                                  id_name = "region_id", name_col = "name")
                     )
 # rename all name columns to "name"
 for(geo in names(geographies))
@@ -112,6 +113,9 @@ pcls[city_id == 107, city_id := 109]
 
 # add rgs info to parcels
 pcls[controls, control_rgs_id := i.control_rgs_id, on = "control_id"]
+
+# add region id to parcels
+pcls[, region_id := 1]
 
 # load sqft/job and building types
 job_sqft <- fread(file.path(data.dir, "building_sqft_per_job.csv"))
@@ -346,9 +350,8 @@ print(allg[["large_areas"]])
 print(allg[["growth_centers"]])
 print(allg[["controls"]])
 
-
 # save plots into file
-pdf(file = paste0("capacity_comparisons_various_gegraphies_flu-", flu.date[1], "_", flu.date[2], 
+pdf(file = paste0("capacity_comparisons_various_geographies_flu-", flu.date[1], "_", flu.date[2], 
                   if(consider.current.built) "with_curbuilt" else "", ".pdf"), width = 14, height = 8)
 #pdf(file = paste0("capacity_no_lc_comparisons_various_gegraphies_flu-", flu.date[1], "_", flu.date[2], ".pdf"), width = 14, height = 8)
 
@@ -380,7 +383,7 @@ stop("End of processing")
 # below is exploration code
 ############################
 spcls <- pcl.to.store[city_id == 38]
-spcls <- pcl.to.store[growth_center_id == 604]
+spcls <- pcl.to.store[growth_center_id == 522]
 spcls <- pcl.to.store[control_id == 176]
 spcls[, .(DUnew = sum(`residential-units_new`, na.rm = TRUE), 
           NRSFnew = sum(`non-residential-sqft_new`, na.rm = TRUE)
@@ -402,7 +405,7 @@ constr.old <- fread(file.path(constr.dir, paste0("devconstr_final_", flu.date[1]
 constr.new <- fread(file.path(constr.dir, paste0("devconstr_final_", flu.date[2], ".csv")))
 flu.old <- fread(file.path(flu.dir, paste0("flu_imputed_ptid_", flu.date[1], ".csv")))
 flu.new <- fread(file.path(flu.dir, paste0("flu_imputed_ptid_", flu.date[2], ".csv")))
-flu.new[plan_type_id %in% c(623)]
+flu.new[plan_type_id %in% c(1232, 1230)]
 flu.old[plan_type_id %in% c(1714)]
 
 # check where there is only Mixed_Use and nothing else
