@@ -27,8 +27,10 @@ mysql.connection <- function(dbname = "2023_parcel_baseyear") {
 
 CT1db <- "sandbox_james"
 CT2db <- "2023_parcel_baseyear_rtp_update"
+#CT2db <- "2023_parcel_baseyear"
     
 CTnames <- c("new", "old")
+#CTnames <- c("10/06", "09/16")
 xwalkDB <- "2023_parcel_baseyear_luvit_update_scenario"
 
 hhtbl.name <- "annual_household_control_totals"
@@ -61,6 +63,7 @@ dbClearResult(qr)
 qr <- dbSendQuery(mydb, paste0("select * from controls"))
 controls <- data.table(fetch(qr, n = -1))
 dbClearResult(qr)
+dbDisconnect(mydb)
 
 datHH <- rbind(CThh2[, name := CTnames[2]], CThh1[, name := CTnames[1]])
 datHH <- datHH[, .(value = sum(total_number_of_households)), by = .(year, subreg_id, name)]

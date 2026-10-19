@@ -1,7 +1,7 @@
 ##################################################
 # Script for computing capacity for each parcel. 
 # It uses a set of proposals from an unlimited run.
-# Hana Sevcikova, PSRC, updated on 2025-05-06
+# Hana Sevcikova, PSRC, updated on 2026-10-14
 ##################################################
 
 ##################################################
@@ -33,7 +33,7 @@ library(raster)
 setwd('~/psrc/R/urbansimRtools/capacity') 
 
 # save in csv file
-save <- FALSE
+save <- TRUE
 
 # sampling share of residential projects on mix-use parcels
 res.ratio <- 50
@@ -53,6 +53,7 @@ file.prefix <- paste0("CapacityPclNoSampling_res", res.ratio, "-", Sys.Date())
 prop.path <- "~/opus/urbansim_data/data/psrc_parcel/runs/run_35.2025_05_21_09_54_unlimited_hb1110/csv/2024"
 prop.path <- "~/opus/urbansim_data/data/psrc_parcel/runs/run_36.2025_06_02_14_35_unlimited_1x/csv/2024"
 #prop.path <- "~/opus/urbansim_data/data/psrc_parcel/runs/run_42.2025_09_29_02_24_unlimited_du_per_lot/csv/2024"
+prop.path <- "~/opus/urbansim_data/data/psrc_parcel/runs/run_55.2026_10_14_11_01_unlimited/csv/2024"
 
 #prop.path <- "~/opus/urbansim_data/data/psrc_parcel/runs/run_23.2025_05_06_09_55_unlimited_3x/csv/2024"
 #prop.path <- "~/n$/vision2050/opusgit/urbansim_data/data/psrc_parcel/runs/awsmodel01/run_71.run_2022_09_23_14_26/csv/2019"
@@ -62,7 +63,7 @@ prop.path <- "~/opus/urbansim_data/data/psrc_parcel/runs/run_36.2025_06_02_14_35
 # (base year buildings & parcels, building_sqft_per_job,
 # development_constraints, development_templates & components)"~/opus/urbansim_data/data/psrc_parcel/runs/run_42.2025_09_29_02_24_unlimited_du_per_lot/csv/2024"
 #lookup.path <- "~/opus/urbansim_data/data/psrc_parcel/runs/run_42.2025_09_29_02_24_unlimited_du_per_lot/csv/2023"
-lookup.path <- "~/opus/urbansim_data/data/psrc_parcel/runs/run_24.2025_05_13_17_21_unlimited_2x/csv/2023"
+lookup.path <- "~/opus/urbansim_data/data/psrc_parcel/runs/run_55.2026_10_14_11_01_unlimited/csv/2023"
 #lookup.path <- "~/n$/vision2050/opusgit/urbansim_data/data/psrc_parcel/runs/awsmodel01/run_71.run_2022_09_23_14_26/csv/2018"
 #lookup.path <- "~/AWS1E/opusgit/urbansim_data/data/psrc_parcel/runs/run_72.run_2023_01_10_21_14/csv/2018"
 
