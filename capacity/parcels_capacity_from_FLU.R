@@ -25,7 +25,7 @@ constr.dir <- "~/psrc/urbansim-baseyear-prep/future_land_use/dev_constraints"
 flu.dir <- file.path(constr.dir, "../flu")
 
 # when were the flu file and constraints file created
-flu.date <- "2026-09-30"
+flu.date <- "2026-10-21"
 
 lc.factor <- 1 # if LC is defined as percentage (then use 1/100) or proportion (then use 1)
 

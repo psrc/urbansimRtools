@@ -21,12 +21,12 @@ flu.dir <- file.path(constr.dir, "../flu")
 flu.date <- c("2023-01-10", "2026-07-28")
 #flu.date <- c("2026-06-01", "2026-07-22")
 flu.date <- c("2023-01-10", "2026-08-19")
-flu.date <- c("2023-01-10", "2026-09-30")
-#flu.date <- c("2026-09-16", "2026-09-30")
+flu.date <- c("2023-01-10", "2026-10-19")
+flu.date <- c("2026-09-30", "2026-10-21")
 
 flu.names <- c("old", "new")
 #flu.names <- c("07-28", "08-07")
-#flu.names <- c("09-16", "09-30")
+flu.names <- c("09-30", "10-21")
 
 lc.factor <- c(1, 1) # if LC is defined as percentage (then use 1/100) or proportion (then use 1)
 
@@ -45,7 +45,7 @@ res.ratios <- c(40, 50, 60)
 #update.plantype <- c(FALSE, TRUE)
 update.plantype <- c(TRUE, FALSE) # using parcel table that has been updated with new plan_type_id
 update.plantype <- c(TRUE, TRUE)
-update.plantype.from.rds <- c(TRUE, FALSE) # should the update be made using data in baseyear explorer (should be TRUE for old FLU)
+update.plantype.from.rds <- c(FALSE, FALSE) # should the update be made using data in baseyear explorer (should be TRUE for old FLU)
 
 # should current built be considered
 consider.current.built <- TRUE
@@ -385,6 +385,7 @@ stop("End of processing")
 spcls <- pcl.to.store[city_id == 38]
 spcls <- pcl.to.store[growth_center_id == 522]
 spcls <- pcl.to.store[control_id == 176]
+spcls <- pcl.to.store[`plan_type_id_10-19` == 1286]
 spcls[, .(DUnew = sum(`residential-units_new`, na.rm = TRUE), 
           NRSFnew = sum(`non-residential-sqft_new`, na.rm = TRUE)
           ), by = "plan_type_id_new"][order(-NRSFnew)]#[order(-DUnew)]
