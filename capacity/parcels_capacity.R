@@ -53,7 +53,7 @@ file.prefix <- paste0("CapacityPclNoSampling_res", res.ratio, "-", Sys.Date())
 prop.path <- "~/opus/urbansim_data/data/psrc_parcel/runs/run_35.2025_05_21_09_54_unlimited_hb1110/csv/2024"
 prop.path <- "~/opus/urbansim_data/data/psrc_parcel/runs/run_36.2025_06_02_14_35_unlimited_1x/csv/2024"
 #prop.path <- "~/opus/urbansim_data/data/psrc_parcel/runs/run_42.2025_09_29_02_24_unlimited_du_per_lot/csv/2024"
-prop.path <- "~/opus/urbansim_data/data/psrc_parcel/runs/run_55.2026_10_14_11_01_unlimited/csv/2024"
+prop.path <- "~/opus/urbansim_data/data/psrc_parcel/runs/run_60.2026_10_27_11_11_unlimited/csv/2024"
 
 #prop.path <- "~/opus/urbansim_data/data/psrc_parcel/runs/run_23.2025_05_06_09_55_unlimited_3x/csv/2024"
 #prop.path <- "~/n$/vision2050/opusgit/urbansim_data/data/psrc_parcel/runs/awsmodel01/run_71.run_2022_09_23_14_26/csv/2019"
@@ -63,7 +63,7 @@ prop.path <- "~/opus/urbansim_data/data/psrc_parcel/runs/run_55.2026_10_14_11_01
 # (base year buildings & parcels, building_sqft_per_job,
 # development_constraints, development_templates & components)"~/opus/urbansim_data/data/psrc_parcel/runs/run_42.2025_09_29_02_24_unlimited_du_per_lot/csv/2024"
 #lookup.path <- "~/opus/urbansim_data/data/psrc_parcel/runs/run_42.2025_09_29_02_24_unlimited_du_per_lot/csv/2023"
-lookup.path <- "~/opus/urbansim_data/data/psrc_parcel/runs/run_55.2026_10_14_11_01_unlimited/csv/2023"
+lookup.path <- "~/opus/urbansim_data/data/psrc_parcel/runs/run_60.2026_10_27_11_11_unlimited/csv/2023"
 #lookup.path <- "~/n$/vision2050/opusgit/urbansim_data/data/psrc_parcel/runs/awsmodel01/run_71.run_2022_09_23_14_26/csv/2018"
 #lookup.path <- "~/AWS1E/opusgit/urbansim_data/data/psrc_parcel/runs/run_72.run_2023_01_10_21_14/csv/2018"
 
@@ -76,6 +76,9 @@ set.seed(rng.seed)
 bld.base <- fread(file.path(lookup.path, "buildings.csv"))
 props <- fread(file.path(prop.path, "development_project_proposals.csv"))
 props <- subset(props, status_id != 3) # do not include MPDs
+# TODO: remove when fixed in the base year data; the MPD proposal on this Tacoma parcel
+# refers to template 272 which is now a single-family template (yields 1.2M DU)
+props <- subset(props, !(parcel_id == 834145 & template_id == 272))
 comp <- fread(file.path(prop.path, "development_project_proposal_components.csv"))
 comp <- subset(comp, proposal_id %in% props$proposal_id)
 pcl <- fread(file.path(lookup.path, "parcels.csv"))
@@ -190,6 +193,24 @@ non_res_maxt <- non_res[, .SD[which.max(non_residential_sqft)], by = parcel_id]
 non_res_max <- non_res_maxt[, .(parcel_id, non_residential_sqft_prop = non_residential_sqft,
                                  job_capacity_prop = job_capacity, building_sqft_prop = building_sqft,
                                  residential_units_prop = 0)]
+# Parcels with residential units on the ground that have only non-res proposals, while their plan type
+# allows residential development: since the non-res proposal would demolish the existing units,
+# treat the existing stock as the residential option and blend it with the non-res proposal
+# using the res-ratio (as in the mix-use case below):
+# res.ratio * (existing stock) + (1 - res.ratio) * (max non-res proposal)
+res.plan.types <- constraints[maximum != 0 & (generic_land_use_type_id %in% c(1, 2) |
+                                (generic_land_use_type_id == 6 & constraint_type == "units_per_acre")),
+                              unique(plan_type_id)]
+non_res_max[pclstock, `:=`(base_du = i.pcl_resunits, base_nrsqft = i.pcl_nonres_sqft,
+                           base_jobs = i.pcl_job_capacity, base_bsqft = i.pcl_bldsqft), on = "parcel_id"]
+non_res_max[pcl, plan_type_id := i.plan_type_id, on = "parcel_id"]
+rr.nr <- res.ratio/100
+non_res_max[!is.na(base_du) & base_du > 0 & plan_type_id %in% res.plan.types,
+            `:=`(residential_units_prop = rr.nr * base_du,
+                 non_residential_sqft_prop = rr.nr * base_nrsqft + (1 - rr.nr) * non_residential_sqft_prop,
+                 job_capacity_prop = rr.nr * base_jobs + (1 - rr.nr) * job_capacity_prop,
+                 building_sqft_prop = rr.nr * base_bsqft + (1 - rr.nr) * building_sqft_prop)]
+non_res_max[, `:=`(base_du = NULL, base_nrsqft = NULL, base_jobs = NULL, base_bsqft = NULL, plan_type_id = NULL)]
 
 res_units_mix_max <- res_units_mix[, .SD[which.max(residential_units)], by = parcel_id]
 non_res_mix_max <- non_res_mix[, .SD[which.max(non_residential_sqft)], by = parcel_id]
@@ -216,24 +237,41 @@ comb_mix_max[non_res_mix, `:=`(non_residential_sqft_prop = i.non_residential_sqf
              on = c("parcel_id", "proposal_id")]
 
 if(!mu.sampling){
-    rest_comb <- comb_mix_max[is.na(proposal_id)] # records to process (have different proposals for res and non-res)
-    # get the corresponding units
-    rest_comb[res_units_mix, `:=`(residential_units_prop = i.residential_units, building_sqft_prop = i.building_sqft), 
-                 on = c(parcel_id = "parcel_id", proposal_id.x = "proposal_id")]
-    rest_comb[non_res_mix, `:=`(non_residential_sqft_prop = i.non_residential_sqft, 
-                                   building_sqft.y = i.building_sqft, 
-                                   job_capacity_prop = i.job_capacity), 
-                 on = c(parcel_id = "parcel_id", proposal_id.y = "proposal_id")]
-    # for cases where there are just proposals with one component, take the corresponding ratio of the units,
-    # otherwise leave as it is (since we would be leaving out the other component)
-    comb_mix_max[rest_comb, 
+    # Since the simulation builds only one proposal per parcel, blend the two whole proposals
+    # (i.e. including all their components) using the res-ratio:
+    # res.ratio * (max res proposal) + (1 - res.ratio) * (max non-res proposal)
+    # assemble res and non-res quantities of each mix-use proposal
+    mix_props <- merge(res_units_mix[, .(parcel_id, proposal_id, du = residential_units, bsqft_res = building_sqft)],
+                       non_res_mix[, .(parcel_id, proposal_id, nrsqft = non_residential_sqft,
+                                       bsqft_nonres = building_sqft, jobs = job_capacity)],
+                       by = c("parcel_id", "proposal_id"), all = TRUE)
+    for(col in c("du", "bsqft_res", "nrsqft", "bsqft_nonres", "jobs"))
+        mix_props[is.na(get(col)), (col) := 0]
+
+    rest_comb <- comb_mix_max[is.na(proposal_id), .(parcel_id, proposal_id.x, proposal_id.y)] # records to process (have different proposals for res and non-res)
+    # get the quantities of the max res proposal (.x) and of the max non-res proposal (.y)
+    rest_comb <- merge(rest_comb, mix_props, by.x = c("parcel_id", "proposal_id.x"),
+                       by.y = c("parcel_id", "proposal_id"), all.x = TRUE)
+    rest_comb <- merge(rest_comb, mix_props, by.x = c("parcel_id", "proposal_id.y"),
+                       by.y = c("parcel_id", "proposal_id"), all.x = TRUE, suffixes = c(".x", ".y"))
+    rr <- res.ratio/100
+    comb_mix_max[rest_comb,
                  `:=`(proposal_id = 0,
-                      residential_units_prop = ifelse(has_both_comp.x, i.residential_units_prop,  res.ratio/100 * i.residential_units_prop),
-                      building_sqft_prop = ifelse(has_both_comp.x, i.building_sqft_prop, res.ratio/100 * i.building_sqft_prop),
-                      non_residential_sqft_prop = ifelse(has_both_comp.y, i.non_residential_sqft_prop, (1 - res.ratio/100) * i.non_residential_sqft_prop),
-                      building_sqft.y = ifelse(has_both_comp.y, i.building_sqft.y, (1 - res.ratio/100) * i.building_sqft.y),
-                      job_capacity_prop = ifelse(has_both_comp.y, i.job_capacity_prop, (1 - res.ratio/100) * i.job_capacity_prop)),
+                      residential_units_prop = rr * i.du.x + (1 - rr) * i.du.y,
+                      building_sqft_prop = rr * i.bsqft_res.x + (1 - rr) * i.bsqft_res.y,
+                      non_residential_sqft_prop = rr * i.nrsqft.x + (1 - rr) * i.nrsqft.y,
+                      building_sqft.y = rr * i.bsqft_nonres.x + (1 - rr) * i.bsqft_nonres.y,
+                      job_capacity_prop = rr * i.jobs.x + (1 - rr) * i.jobs.y),
                  on = "parcel_id"]
+    # if the blended capacity is below the existing stock (in units or non-res sqft),
+    # keep the existing stock (as in the FLU-based capacity)
+    comb_mix_max[pclstock, `:=`(base_du = i.pcl_resunits, base_nrsqft = i.pcl_nonres_sqft,
+                                base_jobs = i.pcl_job_capacity, base_bsqft = i.pcl_bldsqft), on = "parcel_id"]
+    comb_mix_max[proposal_id == 0 & !is.na(base_du) &
+                     (residential_units_prop < base_du | non_residential_sqft_prop < base_nrsqft),
+                 `:=`(residential_units_prop = base_du, non_residential_sqft_prop = base_nrsqft,
+                      job_capacity_prop = base_jobs, building_sqft_prop = base_bsqft, building_sqft.y = 0)]
+    comb_mix_max[, `:=`(base_du = NULL, base_nrsqft = NULL, base_jobs = NULL, base_bsqft = NULL)]
 }
 comb_mix_max[, `:=`(proposal_id.x = NULL, proposal_id.y = NULL, has_both_comp.x = NULL, has_both_comp.y = NULL)]
 

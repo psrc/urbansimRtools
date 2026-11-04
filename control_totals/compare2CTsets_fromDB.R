@@ -11,7 +11,7 @@ setwd("~/psrc/R/urbansimRtools/control_totals")
 # Connecting to Mysql
 mysql.connection <- function(dbname = "2023_parcel_baseyear") {
     # credentials can be stored in a file (as one column: username, password, host)
-    if(file.exists("creds.txt")) {
+    if(file.exists(".creds.txt")) {
         creds <- read.table(".creds.txt", stringsAsFactors = FALSE)
         un <- creds[1,1]
         psswd <- creds[2,1]

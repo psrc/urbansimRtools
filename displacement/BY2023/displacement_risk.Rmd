@@ -2,14 +2,14 @@
 title: "Capacity-Based Displacement Risk"
 output: pdf_document
 author: "Hana Ševčíková"
-date: "09/28/2026"
+date: "11/03/2026"
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(data.table)
 BY <- 2023
-run <- "run72" # just to get up to date base year data
+run <- "run60" 
 save.output <- TRUE
 ```
 
@@ -88,6 +88,9 @@ bld[year_built > BY + 2, year_built := 0]
 age.limit <- 8
 rbld <- bld[residential_units > 0 & building_id %in% hh[, building_id] & year_built < (BY + 2 - age.limit)]
 
+# exclude parcels that are tax exempt
+rbld <- rbld[not_demolish == 0 & !parcel_id %in% pcl[exemption == 1, parcel_id]]
+
 # select proposals that are on parcels with selected residential buildings
 redprop <- dprop[parcel_id %in% rbld[, parcel_id]]
 setkey(redprop, proposal_id, parcel_id)
@@ -98,9 +101,10 @@ setkey(redbld, building_id, parcel_id)
 ```
 
 * Use only buildings that:
-    * have residential units, 
-    * are occupied by a household, 
-    * are older than `r age.limit` years (*here assuming that buildings less than about 8 years old are too young to destroy; also, the value of 8 is used in the re-development filter of the simulation run*), and 
+    * have residential units,
+    * are occupied by a household,
+    * are older than `r age.limit` years (*here assuming that buildings less than about 8 years old are too young to destroy; also, the value of 8 is used in the re-development filter of the simulation run*),
+    * are not on a tax-exempt parcel (*owned by government, churches, nonprofits or housing authorities*), and
     * there is a development proposal on its parcel.
 
     Result: `r nrow(redbld)` buildings on `r nrow(redbld[, .N, by = parcel_id])` parcels
@@ -204,11 +208,125 @@ merge(data.table(county_id = c(33, 35, 53, 61), county_name = c("King", "Kitsap"
 hhtot[, .(hh_at_risk = sum(hh_at_risk), hh_total = sum(N), percent = round(sum(hh_at_risk)/sum(N)*100, 1))]
 ```
 
+## Neighborhood Measures
+
+```{r echo = FALSE}
+buffer.radius <- 660 # in feet (1/8 mile)
+min.neighbors <- 5
+size.breaks <- c(0, 2, 4, 6, 19, Inf)
+size.labels <- c("1-2", "3-4", "5-6", "7-19", "20+")
+
+# all residential parcels in the base year with their existing density (DU per acre)
+nbpcl <- bld[residential_units > 0, .(DU = sum(residential_units)), by = parcel_id]
+nbpcl[pcl, `:=`(census_block_id = i.census_block_id, parcel_sqft = i.parcel_sqft,
+                x = i.x_coord_sp, y = i.y_coord_sp), on = "parcel_id"]
+nbpcl[, size_class := cut(DU, size.breaks, labels = size.labels)]
+nbpcl[parcel_sqft > 0, dens := DU / parcel_sqft * 43560]
+
+# dominant size class per block
+blkcl <- nbpcl[, .N, by = .(census_block_id, size_class)]
+blkcl[, `:=`(n_pcl = sum(N), share = N/sum(N)), by = census_block_id]
+blkdom <- blkcl[blkcl[, .I[which.max(share)], by = census_block_id]$V1,
+                .(census_block_id, n_pcl, dom_class = size_class, dom_share = share)]
+nbpcl[blkdom, `:=`(blk_n_pcl = i.n_pcl, blk_dom_class = i.dom_class, blk_dom_share = i.dom_share),
+      on = "census_block_id"]
+
+# aggregate density (total DU per total residential acre) of the other residential parcels in the block,
+# i.e. excluding the parcel itself
+nbpcl[!is.na(dens), `:=`(blk_n_nb = .N - 1,
+                         blk_agg_dens = (sum(DU) - DU) / (sum(parcel_sqft) - parcel_sqft) * 43560),
+      by = census_block_id]
+nbpcl[blk_n_nb < min.neighbors, blk_agg_dens := NA]
+
+# aggregate density of other residential parcels within radius of each parcel,
+# using a grid with cell size = radius, so that all neighbors are in the 3x3 surrounding cells
+buffer_density <- function(dt, radius, nchunks = 50){
+    pts <- dt[, .(parcel_id, x, y, DU, parcel_sqft, cx = floor(x/radius), cy = floor(y/radius))]
+    offsets <- CJ(dx = -1:1, dy = -1:1)[, k := 1]
+    chunk <- cut(pts$cx, nchunks, labels = FALSE)
+    rbindlist(lapply(split(pts, chunk), function(foc){
+        cand <- foc[, .(fid = parcel_id, fx = x, fy = y, cx, cy, k = 1)][offsets, on = "k", allow.cartesian = TRUE]
+        cand[, `:=`(cx = cx + dx, cy = cy + dy)]
+        pairs <- pts[cand, on = c("cx", "cy"), nomatch = NULL, allow.cartesian = TRUE,
+                     .(fid, parcel_id, DU, parcel_sqft, d2 = (x - fx)^2 + (y - fy)^2)]
+        pairs[d2 <= radius^2 & parcel_id != fid,
+              .(buf_n_nb = .N, buf_agg_dens = sum(DU) / sum(parcel_sqft) * 43560),
+              by = .(parcel_id = fid)]
+    }))
+}
+bufdens <- buffer_density(nbpcl[!is.na(dens)], buffer.radius)
+nbpcl[bufdens, `:=`(buf_n_nb = i.buf_n_nb, buf_agg_dens = i.buf_agg_dens), on = "parcel_id"]
+nbpcl[buf_n_nb < min.neighbors, buf_agg_dens := NA]
+
+nbpcl[, `:=`(blk_rel_dens = dens/blk_agg_dens, buf_rel_dens = dens/buf_agg_dens)]
+
+# mark parcels at risk in the base setting
+nbpcl[, at_risk := parcel_id %in% res[, parcel_id]]
+
+if(save.output)
+    fwrite(nbpcl[, .(parcel_id, census_block_id, DU, size_class, dens, blk_n_pcl, blk_dom_class, blk_dom_share,
+                     blk_n_nb, blk_agg_dens, blk_rel_dens, buf_n_nb, buf_agg_dens, buf_rel_dens, at_risk)],
+           file = paste0("neighborhood_measures-BY", BY, "-", Sys.Date(), ".csv"))
+```
+
+These measures describe how similar the residential buildings in a neighborhood are, and where each parcel stands relative to its neighbors. They are computed for all `r nrow(nbpcl)` residential parcels in `r BY` (not only those passing the filters above), so that the neighborhood is complete.
+
+* **Dominant size-class share** (`blk_dom_share`): Parcels are classified by the number of their existing DUs into `r paste(size.labels, collapse = ", ")`. For each census block, it is the share of residential parcels in the most common class (`blk_dom_class`). A value of 1 means all residential parcels in the block are in the same class.
+* **Relative density**: The parcel's density (DU per acre) divided by the aggregate density of the *other* residential parcels in the same census block (`blk_rel_dens`) or with centroids within a `r buffer.radius` ft buffer around the parcel centroid (`buf_rel_dens`). The aggregate density is the total number of DUs of these parcels divided by their total area. Unlike a median over parcels, it reflects the size of large buildings, e.g. a single family house surrounded by many single family houses and a few large apartment buildings is less dense than its neighborhood. Values below 1 mean the parcel is less dense than its neighbors. It is set to missing if there are fewer than `r min.neighbors` neighbors, or if the parcel has zero area (`r nbpcl[is.na(dens), .N]` parcels).
+
+For each parcel, the measures are saved in a csv file with the prefix `neighborhood_measures`. The tables below compare parcels at risk in the base setting (age limit `r age.limit`, redevelopment factor `r comp.factor`) with the remaining residential parcels.
+
+* Distribution of parcels by the dominant size-class share of their block:
+
+    ```{r echo = FALSE}
+nbpcl[, dom_share_cat := cut(blk_dom_share, c(0, 0.5, 0.75, 0.9, 0.99, 1), include.lowest = TRUE)]
+dcast(nbpcl[, .N, by = .(risk = ifelse(at_risk, "pct_at_risk", "pct_not_at_risk"), dom_share_cat)][,
+            percent := round(N/sum(N)*100, 1), by = risk],
+      dom_share_cat ~ risk, value.var = "percent")[order(dom_share_cat)]
+```
+
+* Distribution of relative density:
+
+    ```{r echo = FALSE}
+nbpcl[, .(parcels = .N,
+          blk_q25 = quantile(blk_rel_dens, 0.25, na.rm = TRUE), blk_median = median(blk_rel_dens, na.rm = TRUE),
+          blk_q75 = quantile(blk_rel_dens, 0.75, na.rm = TRUE), blk_missing = sum(is.na(blk_rel_dens)),
+          buf_q25 = quantile(buf_rel_dens, 0.25, na.rm = TRUE), buf_median = median(buf_rel_dens, na.rm = TRUE),
+          buf_q75 = quantile(buf_rel_dens, 0.75, na.rm = TRUE), buf_missing = sum(is.na(buf_rel_dens))),
+      by = at_risk][, lapply(.SD, function(x) if(is.numeric(x)) round(x, 2) else x)]
+```
+
 ## Alternative Filters
 
 ```{r echo = FALSE}
-filter_parcels <- function(age.limit = 8, dev.factor = 1, save = FALSE){
+filter_parcels <- function(age.limit = 8, dev.factor = 1, il.ratio = NULL, exclude.exempt = TRUE,
+                           renters.only = FALSE, max.rel.dens = NULL, rel.dens.type = c("buf", "blk"),
+                           max.value.per.unit = NULL, save = FALSE){
+rel.dens.type <- match.arg(rel.dens.type)
 rbld <- bld[residential_units > 0 & building_id %in% hh[, building_id] & year_built < (BY + 2 - age.limit)]
+
+# exclude parcels that are tax exempt
+if(exclude.exempt)
+    rbld <- rbld[not_demolish == 0 & !parcel_id %in% pcl[exemption == 1, parcel_id]]
+
+# keep only parcels where the improvement value of all buildings is less than il.ratio times the land value;
+# parcels with missing (zero) land value cannot be evaluated and are kept
+if(!is.null(il.ratio)){
+    ilpcl <- bld[, .(impr = sum(as.numeric(improvement_value))), by = parcel_id][pcl, land_value := i.land_value, on = "parcel_id"]
+    rbld <- rbld[!parcel_id %in% ilpcl[land_value > 0 & impr >= il.ratio * land_value, parcel_id]]
+}
+
+# keep only parcels where the density relative to the neighborhood (buffer or block) median is less than max.rel.dens;
+# parcels with missing relative density (too few neighbors or zero area) are kept
+if(!is.null(max.rel.dens)){
+    rel.col <- paste0(rel.dens.type, "_rel_dens")
+    rbld <- rbld[!parcel_id %in% nbpcl[!is.na(get(rel.col)) & get(rel.col) >= max.rel.dens, parcel_id]]
+}
+
+# remove parcels where the total (land + improvement) value per existing residential unit is larger than max.value.per.unit;
+# parcels with missing (zero) land value are kept
+if(!is.null(max.value.per.unit))
+    rbld <- rbld[!parcel_id %in% tvpcl[land_value > 0 & DU > 0 & total_value/DU > max.value.per.unit, parcel_id]]
 
 # select proposals that are on parcels with selected residential buildings
 redprop <- dprop[parcel_id %in% rbld[, parcel_id]]
@@ -240,7 +358,9 @@ redpropm[redpcl, existing_units := i.DU, on = "parcel_id"]
 # adjust re-development filter
 redpropm.build <- redpropm[units_est > dev.factor*existing_units | (units_est > existing_units & parcel_id %in% mpd[, parcel_id])]
 
-selhh <- hh[parcel_id %in% redpropm.build[, parcel_id]]
+# renters are tenure 3 (rented) and 4 (occupied without payment of rent)
+hhsel <- if(renters.only) hh[tenure %in% c(3, 4)] else hh
+selhh <- hhsel[parcel_id %in% redpropm.build[, parcel_id]]
 
 res <- selhh[, .(HHatRisk = .N), by = parcel_id]
 setkey(res, parcel_id)
@@ -256,11 +376,17 @@ if(save){
                            census_tract_id = i.census_tract_id, hh_at_risk, hh_total = N), 
                         on = "parcel_id"][!is.na(hh_total)]
 
-    fwrite(resall, file = paste0("hh_at_displacement_risk_age", age.limit, "_devfctr", dev.factor, 
+    suffix <- paste0(if(!is.null(il.ratio)) paste0("_ilr", il.ratio), if(!exclude.exempt) "_withexempt",
+                     if(!is.null(max.rel.dens)) paste0("_rd", rel.dens.type, max.rel.dens),
+                     if(!is.null(max.value.per.unit)) paste0("_tvpu", round(max.value.per.unit/1000), "k"),
+                     if(renters.only) "_renters")
+    fwrite(resall, file = paste0("hh_at_displacement_risk_age", age.limit, "_devfctr", dev.factor, suffix,
                                  "-BY", BY, "-", Sys.Date(), ".csv"))
 }
 
-return(hhtot[, .(hh_at_risk = sum(hh_at_risk), hh_total = sum(N), percent = round(sum(hh_at_risk)/sum(N)*100, 1))])
+return(hhtot[, .(parcels = sum(hh_at_risk > 0), hh_at_risk = sum(hh_at_risk), hh_total = sum(N),
+                 percent = round(sum(hh_at_risk)/sum(N)*100, 1),
+                 renters_pct = round(selhh[, mean(tenure %in% c(3, 4))]*100, 1))])
 }
 ```
 
@@ -282,4 +408,53 @@ print(filter_parcels(dev.factor = 3))
 * Age limit 50 years and redevelopment factor 3:
     ```{r echo = FALSE}
 print(filter_parcels(50, dev.factor = 3, save = save.output))
+```
+
+## Additional Filters
+
+```{r echo = FALSE}
+il.ratio <- 1
+max.rel.dens <- 0.75
+# total (land + improvement) value and existing residential units (all buildings) per parcel
+tvpcl <- bld[, .(impr = sum(as.numeric(improvement_value)), DU = sum(residential_units)), by = parcel_id][pcl[, .(parcel_id, land_value)], on = "parcel_id"]
+tvpcl[is.na(impr), `:=`(impr = 0, DU = 0)][, total_value := land_value + impr]
+# threshold for total value per existing unit, as a quantile over the parcels considered in the base method
+tvpu.quantile <- 0.95
+tvpu.threshold <- quantile(tvpcl[parcel_id %in% redpropm[, parcel_id] & land_value > 0 & DU > 0, total_value/DU],
+                           tvpu.quantile, names = FALSE)
+```
+
+The following optional filters can be added on top of the base setting (age limit, redevelopment factor and excluding tax-exempt parcels):
+
+* **Improvement-to-land value:** Keep only parcels where the improvement value of all buildings is less than `r il.ratio` times the land value, i.e. the land is worth more than the structures on it. Parcels with missing (zero) land value are kept.
+* **Relative density:** Keep only parcels whose density is less than `r max.rel.dens` times the aggregate density of the other residential parcels within the `r buffer.radius` ft buffer (`buf_rel_dens`) or in the same census block (`blk_rel_dens`), i.e. parcels that are less dense than their neighborhood. Parcels with missing relative density are kept.
+* **Total value per unit:** Remove parcels where the total value (land plus improvements) divided by the number of existing residential units on the parcel is larger than $`r format(round(tvpu.threshold, -3), big.mark = ",")`, which is the `r tvpu.quantile*100`th percentile over the `r nrow(redpropm)` parcels in the region considered in the base method. *The aim is to exclude parcels with currently expensive homes, e.g. waterfront properties, whose residents are unlikely to be displaced even if the parcel is zoned for more units. Since the improvement value relates to the existing buildings, the value is divided by the existing (not proposed) units.* Parcels with missing (zero) land value are kept.
+* **Renters only:** Count only renter households (tenure 3 and 4). The percentage is still relative to all households, i.e. it is the share of occupied units that are at risk and occupied by renters.
+
+Each row of the tables below adds one filter to the base setting; the last row combines all of them. The column `renters_pct` is the share of renters among households at risk. In the region, `r round(hh[, mean(tenure %in% c(3, 4))]*100, 1)`% of households are renters. The combination of all filters uses the buffer-based relative density. For each filter, a csv file with the suffix `_ilr`, `_rdbuf`, `_rdblk`, `_tvpu`, `_renters` or their combination is saved.
+
+```{r echo = FALSE}
+compare_filters <- function(age.limit, dev.factor, save = FALSE){
+    rbindlist(list(
+        cbind(filter = "base", filter_parcels(age.limit, dev.factor)),
+        cbind(filter = paste("improvement/land <", il.ratio), filter_parcels(age.limit, dev.factor, il.ratio = il.ratio, save = save)),
+        cbind(filter = paste("rel. density (buffer) <", max.rel.dens), filter_parcels(age.limit, dev.factor, max.rel.dens = max.rel.dens, rel.dens.type = "buf", save = save)),
+        cbind(filter = paste("rel. density (block) <", max.rel.dens), filter_parcels(age.limit, dev.factor, max.rel.dens = max.rel.dens, rel.dens.type = "blk", save = save)),
+        cbind(filter = paste0("total value/unit < ", tvpu.quantile*100, "th pct"), filter_parcels(age.limit, dev.factor, max.value.per.unit = tvpu.threshold, save = save)),
+        cbind(filter = "renters only", filter_parcels(age.limit, dev.factor, renters.only = TRUE, save = save)),
+        cbind(filter = "all", filter_parcels(age.limit, dev.factor, il.ratio = il.ratio, max.rel.dens = max.rel.dens,
+                                             rel.dens.type = "buf", max.value.per.unit = tvpu.threshold,
+                                             renters.only = TRUE, save = save))
+    ))
+}
+```
+
+* Age limit 8 years and redevelopment factor 1:
+    ```{r echo = FALSE}
+print(compare_filters(8, 1, save = save.output))
+```
+
+* Age limit 50 years and redevelopment factor 3:
+    ```{r echo = FALSE}
+print(compare_filters(50, 3, save = save.output))
 ```
