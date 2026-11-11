@@ -21,14 +21,20 @@ flu.dir <- file.path(constr.dir, "../flu")
 flu.date <- c("2023-01-10", "2026-07-28")
 #flu.date <- c("2026-06-01", "2026-07-22")
 flu.date <- c("2023-01-10", "2026-08-19")
-flu.date <- c("2023-01-10", "2026-10-19")
-flu.date <- c("2026-09-30", "2026-10-21")
+flu.date <- c("2023-01-10", "2026-11-10")
+#flu.date <- c("2026-10-26", "2026-11-10")
 
 flu.names <- c("old", "new")
 #flu.names <- c("07-28", "08-07")
-flu.names <- c("09-30", "10-21")
+#flu.names <- c("10-26", "11-10")
 
 lc.factor <- c(1, 1) # if LC is defined as percentage (then use 1/100) or proportion (then use 1)
+
+# should FAR and DU/acre be multiplied by lot coverage (previous method; for sensitivity runs only)
+apply.coverage <- c(FALSE, FALSE)
+
+# should the land overhead of large parcels (as in UrbanSim templates) be deducted (see capacity_functions.R)
+apply.overhead <- c(TRUE, TRUE)
 
 # factors that will constrain development, 
 # i.e. parcel is developable if capacity > developable.factor * current_built
@@ -45,7 +51,7 @@ res.ratios <- c(40, 50, 60)
 #update.plantype <- c(FALSE, TRUE)
 update.plantype <- c(TRUE, FALSE) # using parcel table that has been updated with new plan_type_id
 update.plantype <- c(TRUE, TRUE)
-update.plantype.from.rds <- c(FALSE, FALSE) # should the update be made using data in baseyear explorer (should be TRUE for old FLU)
+update.plantype.from.rds <- c(TRUE, FALSE) # should the update be made using data in baseyear explorer (should be TRUE for old FLU)
 
 # should current built be considered
 consider.current.built <- TRUE
@@ -180,7 +186,8 @@ for(fluidx in c(1, 2)){
   constr[is.na(coverage), coverage := 1] 
 
   # compute capacity for each parcel
-  pclwu <- compute.parcel.capacity(pcls, constr, job_sqft_mean, include.coverage = TRUE)
+  pclwu <- compute.parcel.capacity(pcls, constr, job_sqft_mean, apply.coverage = apply.coverage[fluidx],
+                                   apply.overhead = apply.overhead[fluidx])
 
   # join current built with parcels' capacity
   pclwu[pclbld, `:=`(residential_units_built = i.residential_units, 
@@ -326,7 +333,7 @@ for(geo in names(geographies)){
     # create a plot with only those ids where target is larger than capacity
     datct <- reseb[geography == geo & indicator == "total_capacity" & type == "residential-units"]
     datct[datct[flu == "target"], target := `i.50`, on = c("id")]
-    show.ids <- unique(datct[flu == "new" & `60` - target < -5, id])
+    show.ids <- unique(datct[flu == flu.names[2] &`60` - target < -5, id])
     if(length(show.ids) > 0) {
       dat <- datct[id %in% show.ids]
       gt <- ggplot(dat[flu != "target"], 

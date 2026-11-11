@@ -25,7 +25,7 @@ constr.dir <- "~/psrc/urbansim-baseyear-prep/future_land_use/dev_constraints"
 flu.dir <- file.path(constr.dir, "../flu")
 
 # when were the flu file and constraints file created
-flu.date <- "2026-10-26"
+flu.date <- "2026-11-10"
 
 lc.factor <- 1 # if LC is defined as percentage (then use 1/100) or proportion (then use 1)
 
@@ -37,8 +37,19 @@ update.plantype <- TRUE
 # if FALSE, the file prcls_ptid_final_{flu.date}.csv in constr.dir is used
 update.plantype.from.rds <- FALSE
 
+# should FAR and DU/acre be multiplied by lot coverage (previous method; for sensitivity runs only)
+apply.coverage <- FALSE
+
+# should the land overhead of large parcels (as in UrbanSim templates) be deducted (see capacity_functions.R)
+apply.overhead <- TRUE
+
+# should units from DU/acre be rounded per parcel with a minimum of 1 unit on legal lots,
+# as in UrbanSim proposals (consistent with parcels_capacity.R; see capacity_functions.R)
+round.units <- TRUE
+
 # share of residential capacity on mix-use parcels (in %);
-# the non-residential capacity is taken as (100 - res.ratio)%
+# the non-residential capacity is taken as (100 - res.ratio)%,
+# unless the current built of one of the uses takes a larger share (see split.mixed.capacity)
 res.ratio <- 50
 
 # parcel is developable if capacity > developable.factor * current_built;
@@ -127,7 +138,18 @@ job_sqft_mean <- merge(job_sqft, glu.bt, by = "building_type_id", allow.cartesia
     , .(building_sqft_per_job = mean(building_sqft_per_job)), by = .(zone_id, generic_land_use_type_id)]
 
 # compute capacity for each parcel (at most one res and one non-res record per parcel)
-pclwu <- compute.parcel.capacity(pcls, constr, job_sqft_mean, include.coverage = TRUE)
+pclwu <- compute.parcel.capacity(pcls, constr, job_sqft_mean, apply.coverage = apply.coverage,
+                                 apply.overhead = apply.overhead, round.units = round.units)
+
+# split mix-use parcels using the residential ratio, taking the current built into account
+pclwu[pclstock, `:=`(residential_units_built = i.DUbase, non_residential_sqft_built = i.NRSQFbase), on = "parcel_id"]
+pclwu[is.na(residential_units_built), residential_units_built := 0]
+pclwu[is.na(non_residential_sqft_built), non_residential_sqft_built := 0]
+mixsplit <- split.mixed.capacity(pclwu, res.ratio = res.ratio)
+pclwu[mixsplit[, .(parcel_id, constraint_type = "units_per_lot", res_units = residential_units)],
+      residential_units := i.res_units, on = c("parcel_id", "constraint_type")]
+pclwu[mixsplit[, .(parcel_id, constraint_type = "far", bld_sqft = building_sqft)],
+      building_sqft := i.bld_sqft, on = c("parcel_id", "constraint_type")]
 
 # convert into one record per parcel
 capres <- pclwu[constraint_type != "far", .(parcel_id, mixed, DUcap = residential_units,
@@ -149,10 +171,6 @@ cap[is.na(DUcap), DUcap := 0]
 cap[is.na(NRSQFcap), NRSQFcap := 0]
 cap[is.na(has_res), has_res := FALSE]
 cap[is.na(has_nonres), has_nonres := FALSE]
-
-# split mix-use parcels using the residential ratio
-cap[mixed == TRUE, `:=`(DUcap = res.ratio/100 * DUcap,
-                        NRSQFcap = (1 - res.ratio/100) * NRSQFcap)]
 
 # derive job capacity and building sqft
 cap[, JOBSPcap := ifelse(NRSQFcap > 0 & !is.na(building_sqft_per_job), NRSQFcap / building_sqft_per_job, 0)]

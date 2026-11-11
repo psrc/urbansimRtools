@@ -194,23 +194,18 @@ non_res_max <- non_res_maxt[, .(parcel_id, non_residential_sqft_prop = non_resid
                                  job_capacity_prop = job_capacity, building_sqft_prop = building_sqft,
                                  residential_units_prop = 0)]
 # Parcels with residential units on the ground that have only non-res proposals, while their plan type
-# allows residential development: since the non-res proposal would demolish the existing units,
-# treat the existing stock as the residential option and blend it with the non-res proposal
-# using the res-ratio (as in the mix-use case below):
-# res.ratio * (existing stock) + (1 - res.ratio) * (max non-res proposal)
+# allows residential development: residential proposals on these parcels were all removed as smaller than
+# the existing units, i.e. the existing units already use the whole residential capacity.
+# As in the FLU-based capacity (split.mixed.capacity in capacity_functions.R), the existing units are kept
+# and no share is left for non-res development, so these parcels keep their existing stock.
 res.plan.types <- constraints[maximum != 0 & (generic_land_use_type_id %in% c(1, 2) |
                                 (generic_land_use_type_id == 6 & constraint_type == "units_per_acre")),
                               unique(plan_type_id)]
-non_res_max[pclstock, `:=`(base_du = i.pcl_resunits, base_nrsqft = i.pcl_nonres_sqft,
-                           base_jobs = i.pcl_job_capacity, base_bsqft = i.pcl_bldsqft), on = "parcel_id"]
+non_res_max[pclstock, base_du := i.pcl_resunits, on = "parcel_id"]
 non_res_max[pcl, plan_type_id := i.plan_type_id, on = "parcel_id"]
-rr.nr <- res.ratio/100
-non_res_max[!is.na(base_du) & base_du > 0 & plan_type_id %in% res.plan.types,
-            `:=`(residential_units_prop = rr.nr * base_du,
-                 non_residential_sqft_prop = rr.nr * base_nrsqft + (1 - rr.nr) * non_residential_sqft_prop,
-                 job_capacity_prop = rr.nr * base_jobs + (1 - rr.nr) * job_capacity_prop,
-                 building_sqft_prop = rr.nr * base_bsqft + (1 - rr.nr) * building_sqft_prop)]
-non_res_max[, `:=`(base_du = NULL, base_nrsqft = NULL, base_jobs = NULL, base_bsqft = NULL, plan_type_id = NULL)]
+# removing them from the proposals makes them take the base year stock below
+non_res_max <- non_res_max[!(!is.na(base_du) & base_du > 0 & plan_type_id %in% res.plan.types)]
+non_res_max[, `:=`(base_du = NULL, plan_type_id = NULL)]
 
 res_units_mix_max <- res_units_mix[, .SD[which.max(residential_units)], by = parcel_id]
 non_res_mix_max <- non_res_mix[, .SD[which.max(non_residential_sqft)], by = parcel_id]
